@@ -16,7 +16,7 @@ from orangecontrib.spectroscopy.data import getx
 from orangecontrib.spectroscopy.preprocess import (
     PCADenoising, GaussianSmoothing, Cut, SavitzkyGolayFiltering,
     Absorbance, Transmittance,
-    CurveShift, SpSubtract
+    CurveShift, SpSubtract, AmplitudeFactor
 )
 from orangecontrib.spectroscopy.preprocess.transform import SpecTypes
 from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange, MovableVline, \
@@ -457,6 +457,33 @@ class SpectralTransformEditor(BaseEditorOrange):
             self.reference_curve.setData(x=x[xsind], y=X_ref[xsind])
             self.reference_curve.show()
 
+class AmplitudeFactorInterface(BaseEditorOrange):
+    """
+    Amplitude Factor interface. Multiplies the signal by a constant factor.
+    """
+
+    name = "Amplitude Factor"
+    qualname = "orangecontrib.infrared.amplitudefactor"
+
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+
+        self.factor = 1
+
+        form = QFormLayout()
+        factor = lineEditFloatRange(self, self, "factor", callback=self.edited.emit)
+        form.addRow("Factor", factor)
+        self.controlArea.setLayout(form)
+
+    def setParameters(self, params):
+        self.factor = params.get("factor", 1)
+
+    @staticmethod
+    def createinstance(params):
+        params = dict(params)
+        factor = float(params.get("factor", 1))
+        return AmplitudeFactor(factor=factor)
+
 
 
 preprocess_editors.register(CutEditor, 25)
@@ -467,3 +494,4 @@ preprocess_editors.register(PCADenoisingEditor, 200)
 preprocess_editors.register(SpectralTransformEditor, 225)
 preprocess_editors.register(CurveShiftEditor, 250)
 preprocess_editors.register(SpSubtractEditor, 275)
+preprocess_editors.register(AmplitudeFactorInterface, 1000)

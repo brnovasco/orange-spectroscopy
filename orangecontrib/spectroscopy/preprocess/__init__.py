@@ -884,3 +884,33 @@ class PhaseUnwrap(Preprocess):
             return data.from_table(domain, data)
         else: 
             return data
+
+class _AmplitudeFactorCommon(CommonDomain):
+
+    def __init__(self, factor, domain):
+        super().__init__(domain)
+        self.factor = factor
+
+    def transformed(self, data):
+        return data.X * self.factor
+
+
+class AmplitudeFactor(Preprocess):
+    """
+    Amplitude Factor interface. Multiplies the signal by a constant factor.
+
+    Parameters
+    ----------
+    factor    : Constant factor that multiplies the signal. (float)
+    """
+
+    def __init__(self, factor=1):
+        self.factor = factor
+
+    def __call__(self, data):
+        common = _AmplitudeFactorCommon(self.factor, data.domain)
+        atts = [a.copy(compute_value=SelectColumn(i, common))
+                for i, a in enumerate(data.domain.attributes)]
+        domain = Orange.data.Domain(atts, data.domain.class_vars,
+                                    data.domain.metas)
+        return data.from_table(domain, data)
