@@ -851,3 +851,36 @@ class SpSubtract(Preprocess):
                                     data.domain.metas)
         return data.from_table(domain, data)
 
+
+class _PhaseUnwrapCommon(CommonDomain):
+
+    def __init__(self, unwrap, domain):
+        super().__init__(domain)
+        self.unwrap = unwrap
+
+    def transformed(self, data):
+        return np.unwrap(data.X)
+
+
+class PhaseUnwrap(Preprocess):
+    """
+    Unwrap phase values using numpy.unwrap defaults or bypass the data.
+
+    Parameters
+    ----------
+    unwrap    : toggle unwrap/bypass (boolean)
+    """
+
+    def __init__(self, unwrap=True):
+        self.unwrap = unwrap
+
+    def __call__(self, data):
+        if self.unwrap:
+            common = _PhaseUnwrapCommon(self.unwrap, data.domain)
+            atts = [a.copy(compute_value=SelectColumn(i, common))
+                    for i, a in enumerate(data.domain.attributes)]
+            domain = Orange.data.Domain(atts, data.domain.class_vars,
+                                        data.domain.metas)
+            return data.from_table(domain, data)
+        else: 
+            return data
