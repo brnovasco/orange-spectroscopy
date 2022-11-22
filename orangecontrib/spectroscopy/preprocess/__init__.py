@@ -2,7 +2,7 @@ import bottleneck
 import numpy as np
 
 from scipy.interpolate import interp1d
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, convolve1d
 from scipy.spatial.qhull import ConvexHull, QhullError
 from scipy.signal import savgol_filter, convolve
 from sklearn.preprocessing import normalize as sknormalize
@@ -916,19 +916,19 @@ class AmplitudeFactor(Preprocess):
         return data.from_table(domain, data)
 
 class _MovingAverageCommon(CommonDomain):
-
     def __init__(self, kernelsize, domain):
         super().__init__(domain)
         self.kernelsize = kernelsize
 
     def transformed(self, data):
         kernel = (1/self.kernelsize) * np.ones(self.kernelsize)
-        return convolve(data.X , kernel, mode='same', method='auto') 
+        conv = lambda x: convolve(x, kernel, mode='same', method='auto')
+        return np.apply_along_axis(conv, 1, data.X)
 
 
 class MovingAverage(Preprocess):
     """
-    Applies a moving average to the signal using scypy.convolve.
+    Applies a moving average to the signals using scypy.convolve.
 
     Parameters
     ----------

@@ -16,7 +16,7 @@ from orangecontrib.spectroscopy.data import getx
 from orangecontrib.spectroscopy.preprocess import (
     PCADenoising, GaussianSmoothing, Cut, SavitzkyGolayFiltering,
     Absorbance, Transmittance,
-    CurveShift, SpSubtract, PhaseUnwrap, AmplitudeFactor
+    CurveShift, SpSubtract, PhaseUnwrap, AmplitudeFactor, MovingAverage
 )
 from orangecontrib.spectroscopy.preprocess.transform import SpecTypes
 from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange, MovableVline, \
@@ -509,7 +509,31 @@ class AmplitudeFactorInterface(BaseEditorOrange):
         factor = float(params.get("factor", 1))
         return AmplitudeFactor(factor=factor)
 
+class MovingAverageInterface(BaseEditorOrange):
+    """
+    Moving Average interface. Applies a moving average to the signals using scypy.convolve.
+    """
+    name = "Moving Average"
+    qualname = "orangecontrib.infrared.movingaverage"
 
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+
+        self.kernelsize = 1
+
+        form = QFormLayout()
+        kernelsize = lineEditFloatRange(self, self, "kernelsize", callback=self.edited.emit)
+        form.addRow("Kernel Size", kernelsize)
+        self.controlArea.setLayout(form)
+
+    def setParameters(self, params):
+        self.kernelsize = params.get("kernelsize", 1)
+
+    @staticmethod
+    def createinstance(params):
+        params = dict(params)
+        inst_kernelsize = int(params.get("kernelsize", 1)) # todo assert int value
+        return MovingAverage(kernelsize=inst_kernelsize)
 
 preprocess_editors.register(CutEditor, 25)
 preprocess_editors.register(CutEditorInverse, 50)
@@ -521,3 +545,4 @@ preprocess_editors.register(CurveShiftEditor, 250)
 preprocess_editors.register(SpSubtractEditor, 275)
 preprocess_editors.register(PhaseUnwrapInterface, 1000)
 preprocess_editors.register(AmplitudeFactorInterface, 1025)
+preprocess_editors.register(MovingAverageInterface, 1050)
