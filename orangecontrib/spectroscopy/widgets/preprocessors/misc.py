@@ -16,7 +16,7 @@ from orangecontrib.spectroscopy.data import getx
 from orangecontrib.spectroscopy.preprocess import (
     PCADenoising, GaussianSmoothing, Cut, SavitzkyGolayFiltering,
     Absorbance, Transmittance,
-    CurveShift, SpSubtract, PhaseUnwrap, AmplitudeFactor, MovingAverage
+    CurveShift, SpSubtract, PhaseUnwrap, AmplitudeFactor, MovingAverage, ManualTilt
 )
 from orangecontrib.spectroscopy.preprocess.transform import SpecTypes
 from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange, MovableVline, \
@@ -534,6 +534,7 @@ class MovingAverageInterface(BaseEditorOrange):
         params = dict(params)
         inst_kernelsize = int(params.get("kernelsize", 1)) # todo assert int value
         return MovingAverage(kernelsize=inst_kernelsize)
+
 
 preprocess_editors.register(CutEditor, 25)
 preprocess_editors.register(CutEditorInverse, 50)

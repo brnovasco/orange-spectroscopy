@@ -945,3 +945,39 @@ class MovingAverage(Preprocess):
         domain = Orange.data.Domain(atts, data.domain.class_vars,
                                     data.domain.metas)
         return data.from_table(domain, data)
+
+class _ManualTiltCommon(CommonDomain):
+
+    def __init__(self, ammount, domain):
+        print("hey2!")
+        super().__init__(domain)
+        self.ammount = ammount
+
+    def transformed(self, data):
+        xax = getx(data)
+        # creating a line that passes through y = 0 and slope = self.ammount 
+        inclined_curve = (xax - xax[0]) * np.tan(np.deg2rad(self.ammount))
+        return data.X - inclined_curve
+
+
+class ManualTilt(Preprocess):
+    """
+    Amplitude Factor interface. Multiplies the signal by a constant factor.
+
+    Parameters
+    ----------
+    factor    : Constant factor that multiplies the signal. (float)
+    """
+
+    def __init__(self, angle=0, shift=0):
+        print("hey!")
+        self.ammount = angle
+
+    def __call__(self, data):
+        common = _ManualTiltCommon(self.ammount, data.domain)
+        atts = [a.copy(compute_value=SelectColumn(i, common))
+                for i, a in enumerate(data.domain.attributes)]
+            
+        domain = Orange.data.Domain(atts, data.domain.class_vars,
+                                    data.domain.metas)
+        return data.from_table(domain, data)
