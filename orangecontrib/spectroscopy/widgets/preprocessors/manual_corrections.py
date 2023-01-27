@@ -5,39 +5,12 @@ from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QPushButton, QApplication,
 
 from Orange.widgets import gui
 from orangecontrib.spectroscopy.preprocess import LinearBaseline, ManualTilt, RubberbandBaseline
-from orangecontrib.spectroscopy.widgets.gui import XPosLineEdit, lineEditFloatRange
+from orangecontrib.spectroscopy.widgets.gui import MovableVline, VerticalPeakLine, XPosLineEdit, connect_line, lineEditFloatRange
 from orangecontrib.spectroscopy.widgets.preprocessors.registry import preprocess_editors
 from orangecontrib.spectroscopy.widgets.preprocessors.utils import BaseEditorOrange, \
     PreviewMinMaxMixin, layout_widgets
 
-# class ManualTiltInterface(BaseEditorOrange):
-#     """
-#     Manual Tilt Interface. Applies a moving average to the signals using scypy.convolve.
-#     """
-#     name = "Manual Tilt"
-#     qualname = "orangecontrib.infrared.manualtilt"
-
-#     def __init__(self, parent=None, **kwargs):
-#         super().__init__(parent, **kwargs)
-
-#         self.tiltammount = 0
-
-#         form = QFormLayout()
-#         tiltammount = lineEditFloatRange(self, self, "tiltammount", callback=self.edited.emit)
-#         form.addRow("Tilt Ammount", tiltammount)
-#         self.controlArea.setLayout(form)
-
-#     def setParameters(self, params):
-#         self.tiltammount = params.get("tiltammount", 0)
-
-#     @staticmethod # done
-#     def createinstance(params):
-#         params = dict(params)
-#         print(params)
-#         inst_tiltammount = float(params.get("tiltammount", 0))
-#         return ManualTilt(ammount=inst_tiltammount)
-
-class ManualEditor(BaseEditorOrange, PreviewMinMaxMixin):
+class ManualEditor(BaseEditorOrange):
     """
     Manual Corrections Editor subtraction.
     """
@@ -45,20 +18,28 @@ class ManualEditor(BaseEditorOrange, PreviewMinMaxMixin):
     qualname = "orangecontrib.infrared.manual"
 
     def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        # self.controlArea.setLayout(QVBoxLayout())
-
-        form = QFormLayout()
+        BaseEditorOrange.__init__(self, parent, **kwargs)
+        
+        layout = QFormLayout()
+        self.controlArea.setLayout(layout)
 
         self.tiltammount = 0
         self.shiftammount = 0
 
-        form = QFormLayout()
         tiltammount = lineEditFloatRange(self, self, "tiltammount", callback=self.edited.emit)
         shiftammount = lineEditFloatRange(self, self, "shiftammount", callback=self.edited.emit)
-        form.addRow("Tilt Ammount", tiltammount)
-        form.addRow("Shift Ammount", shiftammount)
-        self.controlArea.setLayout(form)
+        layout.addRow("Tilt Ammount", tiltammount)
+        layout.addRow("Shift Ammount", shiftammount)
+
+        # line editor
+        self.lowlim = 0.0
+        self.line = lineEditFloatRange(self, self, "lowlim", callback=self.edited.emit)
+        layout.addRow("Low limit", self.line)
+        self.line.focusIn.connect(self.activateOptions)
+        self.line_ref = MovableVline(label="Low limit") 
+        connect_line(self.line_ref, self, "lowlim")
+        self.line_ref.sigMoveFinished.connect(self.edited)
+        self.user_changed = False
 
         # self.ranges_box = gui.vBox(self.controlArea)  # container for ranges
 
@@ -75,6 +56,12 @@ class ManualEditor(BaseEditorOrange, PreviewMinMaxMixin):
         # self.user_changed = False
 
         # self._adapt_ui()
+    
+    def activateOptions(self):
+        self.parent_widget.curveplot.clear_markings()
+        # for line in [self.line1, self.line2]:
+        self.line_ref.report = self.parent_widget.curveplot
+        self.parent_widget.curveplot.add_marking(self.line_ref)
 
     # def activateOptions(self):
     #     self.parent_widget.curveplot.clear_markings()
@@ -150,6 +137,9 @@ class ManualEditor(BaseEditorOrange, PreviewMinMaxMixin):
     #     self.edited.emit()
 
     def setParameters(self, params):
+        if params: #parameters were manually set somewhere else
+            self.user_changed = True
+        self.lowlim = params.get("lowlim", 0.)
 
         self.tiltammount = params.get("tiltammount", 0)
         self.shiftammount = params.get("shiftammount", 0)
@@ -191,7 +181,6 @@ class ManualEditor(BaseEditorOrange, PreviewMinMaxMixin):
         #     raise Exception("unknown baseline type")
 
     # def set_preview_data(self, data):
-    #     self.preview_data = data
 
 
 preprocess_editors.register(ManualEditor, 1075)
