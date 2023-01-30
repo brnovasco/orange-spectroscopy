@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QPushButton, QApplication,
 
 from Orange.widgets import gui
 from orangecontrib.spectroscopy.preprocess import LinearBaseline, ManualTilt, RubberbandBaseline
-from orangecontrib.spectroscopy.widgets.gui import MovableVline, VerticalPeakLine, XPosLineEdit, connect_line, lineEditFloatRange
+from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange
 from orangecontrib.spectroscopy.widgets.preprocessors.registry import preprocess_editors
 from orangecontrib.spectroscopy.widgets.preprocessors.utils import BaseEditorOrange, \
     PreviewMinMaxMixin, layout_widgets

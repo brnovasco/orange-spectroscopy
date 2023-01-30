@@ -516,3 +516,16 @@ class VerticalPeakLine(pg.InfiniteLine):
             v = Decimal(float_to_str_decimals(v, dx))
         self.label.setText(str(v))
         self.update()
+
+class TurnableLine(MovableVline): # make it vertical and then create custom controls ()maybe will need 2 lines
+
+    edited = Signal()
+    focusIn = Signal()
+
+    def __init__(self, angle=0, position=0, label="", color=(225, 0, 0), report=None):
+        super().__init__(position, label, color, report)
+
+        hp = pg.mkPen(color=color, width=3)
+        np = pg.mkPen(color=color, width=2)
+
+        self.line = pg.InfiniteLine(angle, movable=True, pen=np, hoverPen=hp)
