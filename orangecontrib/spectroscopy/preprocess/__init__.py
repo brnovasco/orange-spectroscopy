@@ -960,7 +960,7 @@ class _ManualTiltCommon(CommonDomain):
         return data.X - inclined_curve
 
 
-class ManualTilt(Preprocess):
+class ManualTilt(Preprocess): # changeThis so it receives x data and returns also the angle to be displayed?
     """
     Amplitude Factor interface. Multiplies the signal by a constant factor.
 
