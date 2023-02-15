@@ -16,7 +16,7 @@ from orangecontrib.spectroscopy.data import getx
 from orangecontrib.spectroscopy.preprocess import Cut, ManualTilt
 
 from orangecontrib.spectroscopy.preprocess.transform import SpecTypes
-from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange, MovableVline, \
+from orangecontrib.spectroscopy.widgets.gui import lineEditFloatRange, \
     connect_line, floatornone, round_virtual_pixels
 from orangecontrib.spectroscopy.widgets.preprocessors.utils import BaseEditor, BaseEditorOrange, \
     REFERENCE_DATA_PARAM
@@ -42,21 +42,25 @@ class ManualEditor(BaseEditorOrange):
         self.controlArea.setLayout(layout)
 
         # self._lowlime = lineEditFloatRange(self, self, "lowlim", callback=self.edited.emit)
-        self._highlime = lineEditFloatRange(self, self, "highlim", callback=self.edited.emit)
+        # self._highlime = lineEditFloatRange(self, self, "highlim", callback=self.edited.emit)
+        self._highx = lineEditFloatRange(self, self, "highlim", callback=self.edited.emit)
 
         # layout.addRow("Low limit", self._lowlime)
-        layout.addRow("High limit", self._highlime)
+        # layout.addRow("High limit", self._highlime)
+        layout.addRow("High x", self._highx)
+
+        self._pointer = pg.GraphicsScene.mouseEvents.MouseClickEvent   
 
         # self._lowlime.focusIn.connect(self.activateOptions)
-        self._highlime.focusIn.connect(self.activateOptions)
-        self.focusIn = self.activateOptions
+        # self._highlime.focusIn.connect(self.activateOptions)
+        # self.focusIn = self.activateOptions
 
         # self.line1 = MovableVline(label="Low limit")
         # connect_line(self.line1, self, "lowlim")
         # self.line1.sigMoveFinished.connect(self.edited)
-        self.line2 = MovableVline(label="High limit")
-        connect_line(self.line2, self, "highlim")
-        self.line2.sigMoveFinished.connect(self.edited)
+        # self.line2 = Turnableline(label="High limit")
+        # connect_line(self.line2, self, "highlim")
+        # self.line2.sigMoveFinished.connect(self.edited)
 
         self.user_changed = False
 
@@ -67,8 +71,8 @@ class ManualEditor(BaseEditorOrange):
         #     line.report = self.parent_widget.curveplot
         #     self.parent_widget.curveplot.add_marking(line) 
 
-        self.line2.report = self.parent_widget.curveplot
-        self.parent_widget.curveplot.add_marking(self.line2) #### hereeeeeeeeeeeeeeeee <<<<<<<<<
+        # self.line2.report = self.parent_widget.curveplot
+        # self.parent_widget.curveplot.add_marking(self.line2) #### hereeeeeeeeeeeeeeeee <<<<<<<<<
 
     def setParameters(self, params):
         if params: #parameters were manually set somewhere else
@@ -96,7 +100,7 @@ class ManualEditor(BaseEditorOrange):
             init_highlim = round_virtual_pixels(maxx - 0.1 * range, range)
 
             # self._lowlime.set_default(init_lowlim)
-            self._highlime.set_default(init_highlim)
+            # self._highlime.set_default(init_highlim)
 
             if not self.user_changed:
                 # self.lowlim = init_lowlim

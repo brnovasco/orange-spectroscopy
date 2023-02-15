@@ -969,9 +969,8 @@ class ManualTilt(Preprocess): # changeThis so it receives x data and returns als
     factor    : Constant factor that multiplies the signal. (float)
     """
 
-    def __init__(self, angle=0, shift=0):
-        print("hey!")
-        self.ammount = angle
+    def __init__(self, ref_point=(1.0,1.0), shift=0):
+        self.ammount = ref_point
 
     def __call__(self, data):
         common = _ManualTiltCommon(self.ammount, data.domain)
