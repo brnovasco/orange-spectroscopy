@@ -515,3 +515,108 @@ class VerticalPeakLine(pg.InfiniteLine):
             v = Decimal(float_to_str_decimals(v, dx))
         self.label.setText(str(v))
         self.update()
+
+
+class MovableHline(pg.UIGraphicsItem):
+
+    sigMoveFinished = Signal(object)
+    sigMoved = Signal(object)
+
+    def __init__(self, position=0., label="", color=(225, 0, 0), report=None):
+        pg.UIGraphicsItem.__init__(self)
+        self.moving = False
+        self.mouseHovering = False
+        self.report = report
+        self.color = color
+        self.isnone = False
+
+        hp = pg.mkPen(color=color, width=3)
+        np = pg.mkPen(color=color, width=2)
+
+        self.line = pg.InfiniteLine(angle=0, movable=True, pen=np, hoverPen=hp)
+        self.line.setParentItem(self)
+        self.line.setCursor(Qt.SizeVerCursor) 
+
+        self.label = pg.TextItem("", anchor=(0, 1), angle=-90)
+        self.label.setParentItem(self)
+
+        self.setValue(position)
+        self.setLabel(label)
+
+        self.line.sigPositionChangeFinished.connect(self._moveFinished)
+        self.line.sigPositionChanged.connect(lambda: (self._moved(), self.sigMoved.emit(self.value())))
+
+        self._lastTransform = None
+
+    def setLabel(self, l):
+        # add space on top not to overlap with cursor coordinates
+        # I can not think of a better way: the text
+        # size is decided at rendering time. As it is always the same,
+        # these spaces will scale with the cursor coordinates.
+        top_space = " " * 7
+
+        self.label.setText(top_space + l, color=self.color)
+
+    def value(self):
+        if self.isnone:
+            return None
+        return self.line.value()
+
+    def rounded_value(self):
+        """ Round the value according to current view on the graph.
+        Return a decimal.Decimal object """
+        v = self.value()
+        dx, dy = pixel_decimals(self.getViewBox())
+        if v is not None:
+            v = Decimal(float_to_str_decimals(v, dx))
+        return v
+
+    def setValue(self, val):
+        oldval = self.value()
+        if oldval == val:
+            return  # prevents recursion with None on input
+        self.isnone = val is None
+        if not self.isnone:
+            rep = self.report  # temporarily disable report
+            self.report = None
+            with blocked(self.line):  # block sigPositionChanged by setValue
+                self.line.setValue(val)
+            self.report = rep
+            self.line.show()
+            self.label.show()
+            self._move_label()
+        else:
+            self.line.hide()
+            self.label.hide()
+            self._moved()
+
+    def boundingRect(self):
+        br = pg.UIGraphicsItem.boundingRect(self)
+        val = self.line.value()
+        br.setLeft(val)
+        br.setRight(val)
+        return br.normalized()
+
+    def _move_label(self):
+        if self.value() is not None and self.getViewBox():
+            self.label.setPos(self.value(), self.getViewBox().viewRect().bottom())
+
+    def _moved(self):
+        self._move_label()
+        if self.report:
+            if self.value() is not None:
+                self.report.report(self, [("x", self.value())])
+            else:
+                self.report.report_finished(self)
+
+    def _moveFinished(self):
+        if self.report:
+            self.report.report_finished(self)
+        self.sigMoveFinished.emit(self.value())
+
+    def paint(self, p, *args):
+        tr = p.transform()
+        if self._lastTransform != tr:
+            self._move_label()
+        self._lastTransform = tr
+        super().paint(p, *args)

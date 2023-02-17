@@ -8,7 +8,7 @@ from Orange.data import Domain
 from Orange.widgets import gui, settings
 from Orange.widgets.widget import OWWidget, Input, Output, OWBaseWidget, Msg
 from Orange.widgets.settings import Setting, ContextSetting, DomainContextHandler, SettingProvider
-from orangecontrib.spectroscopy.widgets.gui import VerticalPeakLine, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
+from orangecontrib.spectroscopy.widgets.gui import MovableHline, VerticalPeakLine, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
     pixels_to_decimals, float_to_str_decimals
 from orangecontrib.spectroscopy.widgets.owspectra import CurvePlot
 from orangecontrib.spectroscopy.preprocess import Cut,  ManualTilt
@@ -69,21 +69,23 @@ class OWManualEditor(OWWidget):
         splitter.setOrientation(Qt.Vertical)
 
         self.plot_in = CurvePlot(self)
-
         self.plot_out = CurvePlot(self)
+        self.plot_in.plot.vb.x_padding = 0.1005  # pad view so that lines are not hidden
+        self.plot_out.plot.vb.y_padding = 0.1005  # pad view so that lines are not hidden
 
         splitter.addWidget(self.plot_in)
         splitter.addWidget(self.plot_out)
 
         self.mainArea.layout().addWidget(splitter)
 
-        self.line1 = MovableVline(position=self.lowlim, label="", report=self.plot_in)
-        self.line1.sigMoved.connect(lambda v: setattr(self, "lowlim", v))
-        self.line2 = MovableVline(position=self.highlim, label="", report=self.plot_in)
+        # self.line1 = MovableHline(position=self.lowlim, label="", report=self.plot_in)
+        # self.line1.sigMoved.connect(lambda v: setattr(self, "lowlim", v))
+        self.line2 = MovableHline(position=self.highlim, label="", report=self.plot_in)
         self.line2.sigMoved.connect(lambda v: setattr(self, "highlim", v))
-        for line in [self.line1, self.line2]:
-            self.plot_in.add_marking(line)
+        # for line in [self.line1, self.line2]:
+        #     self.plot_in.add_marking(line)
             # line.hide()
+        self.plot_in.add_marking(self.line2)
 
         self.data = None
 
@@ -92,13 +94,16 @@ class OWManualEditor(OWWidget):
     def activateOptions(self):
         self.plot_in.clear_markings() 
         self.plot_out.clear_markings()
-        for line in [self.line1, self.line2]:
-            line.report = self.plot_in
-            self.plot_in.add_marking(line)
+        # for line in [self.line1, self.line2]:
+        #     line.report = self.plot_in
+        #     self.plot_in.add_marking(line)
+        self.line2.report = self.plot_in
+        self.plot_in.add_marking(self.line2)
 
     @Inputs.data
     def set_data(self, data):
         self.data = data
+        self.plot_in.set_data(data)
     
     # def limits_etited_le(self, params):
     #     if params: #parameters were manually set somewhere else
