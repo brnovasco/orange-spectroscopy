@@ -1,3 +1,4 @@
+import numpy as np
 import Orange.data
 
 from AnyQt.QtCore import Qt, QRectF, QPointF, QSize
@@ -8,13 +9,17 @@ from Orange.data import Domain
 from Orange.widgets import gui, settings
 from Orange.widgets.widget import OWWidget, Input, Output, OWBaseWidget, Msg
 from Orange.widgets.settings import Setting, ContextSetting, DomainContextHandler, SettingProvider
-from orangecontrib.spectroscopy.widgets.gui import MovableHline, VerticalPeakLine, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
+from Orange.widgets.utils.concurrent import TaskState, ConcurrentWidgetMixin, ConcurrentMixin
+from orangecontrib.spectroscopy.preprocess.utils import SelectColumn
+from orangecontrib.spectroscopy.util import getx
+from orangecontrib.spectroscopy.widgets.gui import MovableHline, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
     pixels_to_decimals, float_to_str_decimals
 from orangecontrib.spectroscopy.widgets.owspectra import CurvePlot
 from orangecontrib.spectroscopy.preprocess import Cut,  ManualTilt
 
 
-class OWManualEditor(OWWidget):
+
+class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
     """
     Manual Editor
     """
@@ -25,7 +30,7 @@ class OWManualEditor(OWWidget):
         data = Input("Data", Orange.data.Table, default=True)
 
     class Outputs:
-        edited_data = Output("Edited Data", Orange.data.Table, default=True)
+        data_edited = Output("Edited Data", Orange.data.Table, default=True)
 
     icon = "icons/hyper.svg"
     priority = 200 # change this number to an appropriate one
@@ -40,11 +45,14 @@ class OWManualEditor(OWWidget):
     lowlim = Setting(None)
     highlim = Setting(None)
 
+    autocommit = settings.Setting(True)
+
     class Warning(OWBaseWidget.Warning):
         out_of_range = Msg("Limits are out of range.")
 
     def __init__(self):
         super().__init__()
+        ConcurrentWidgetMixin.__init__(self)
 
         self.lowlim = 0.
         self.highlim = 1.
@@ -56,9 +64,9 @@ class OWManualEditor(OWWidget):
         form.setLayout(formlayout)
         box.layout().addWidget(form)
 
-        self._lowlim_le = lineEditFloatRange(box, self, "lowlim", callback=print(self.lowlim))
+        self._lowlim_le = lineEditFloatRange(box, self, "lowlim", callback=self.commit)
         formlayout.addRow("Low Limit", self._lowlim_le)
-        self._highlim_le = lineEditFloatRange(box, self, "highlim", callback=print(self.lowlim))
+        self._highlim_le = lineEditFloatRange(box, self, "highlim", callback=self.commit)
         formlayout.addRow("High Limit", self._highlim_le)
 
         self._lowlim_le.focusIn.connect(self.activateOptions)
@@ -88,8 +96,14 @@ class OWManualEditor(OWWidget):
         self.plot_in.add_marking(self.line2)
 
         self.data = None
-
         self.user_changed = False
+        self.plot_out.show()
+
+        gui.auto_commit(self.controlArea, self, "autocommit", "Send Data")
+        self._change_input()
+
+    def _change_input(self):
+        self.commit.deferred()
 
     def activateOptions(self):
         self.plot_in.clear_markings() 
@@ -112,17 +126,52 @@ class OWManualEditor(OWWidget):
     #     self.highlim = params.get("highlim", 1.)
 
     def setParameters(self, params):
+        print("setParameters")
         if params: #parameters were manually set somewhere else
             self.user_changed = True
         self.lowlim = params.get("lowlim", 0.)
         self.highlim = params.get("highlim", 1.)
+    
+    # def on_done(self, data_edited):
+    #     print("on_done")
+    #     self.Outputs.data_edited.send(data_edited)
 
-    @staticmethod
-    def createinstance(params):
-        params = dict(params)
-        lowlim = params.get("lowlim", None)
-        highlim = params.get("highlim", None)
-        return Cut(lowlim=floatornone(lowlim), highlim=floatornone(highlim))
+    @gui.deferred
+    def commit(self):
+        print("commit", self.lowlim, self.highlim)
+        if self.data is None:
+            return
+        out_data = ManualTilt(lowlim=floatornone(self.lowlim), highlim=floatornone(self.highlim))(self.data)
+        self.plot_out.set_data(out_data)
+        self.Outputs.data_edited.send(out_data)
+
+    def handleNewSignals(self):
+        self.commit.deferred()
+
+    # def _calc_manual_tilt(self):
+    #     print("calc manual tilt")
+    #     xax = getx(self.data)
+    #     print("getx", xax)
+    #     sloperad = (self.highlim - self.lowlim) / (xax[-1] - xax[0])
+    #     # creating a line that passes through y = 0 and slope = self.ammount 
+    #     inclined_curve = (xax - xax[0]) * np.tan(sloperad) # (not ideal) should calcullate slope in the frontend so user can see it as the line moves and then pass it as argument np.tan(np.deg2rad(self.ammount))
+    #     new_X =  self.data.X - inclined_curve
+    #     print("domain problems ", self.data.domain.attributes)
+    #     atts = [a.copy(compute_value=SelectColumn(i, new_X))
+    #             for i, a in enumerate(self.data.domain.attributes)]
+    #     print("atts", atts)    
+    #     # domain = Orange.data.Domain(atts, self.data.domain.class_vars,
+    #     #                             self.data.domain.metas)
+    #     # return self.data.from_table(domain, self.data)
+
+    # @staticmethod
+    # def createinstance(params):
+    #     print("createinstance")
+    #     params = dict(params)
+    #     lowlim = params.get("lowlim", None)
+    #     highlim = params.get("highlim", None)
+    #     out_data = ManualTilt(lowlim=floatornone(lowlim), highlim=floatornone(highlim))
+    #     return out_data
 
     # def set_preview_data(self, data):
     #     self.Warning.out_of_range.clear()

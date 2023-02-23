@@ -948,15 +948,17 @@ class MovingAverage(Preprocess):
 
 class _ManualTiltCommon(CommonDomain):
 
-    def __init__(self, ammount, domain):
-        print("hey2!")
+    def __init__(self, highlim, lowlim, domain):
+        print("manual tilt common init?")
         super().__init__(domain)
-        self.ammount = ammount
+        self.highlim = highlim
+        self.lowlim = lowlim
 
     def transformed(self, data):
         xax = getx(data)
+        sloperad = (self.highlim - self.lowlim) / (xax[-1] - xax[0]) 
         # creating a line that passes through y = 0 and slope = self.ammount 
-        inclined_curve = (xax - xax[0]) * np.tan(np.deg2rad(self.ammount))
+        inclined_curve = (xax - xax[0]) * np.tan(sloperad) # (not ideal) should calcullate slope in the frontend so user can see it as the line moves and then pass it as argument np.tan(np.deg2rad(self.ammount))
         return data.X - inclined_curve
 
 
@@ -969,11 +971,12 @@ class ManualTilt(Preprocess): # changeThis so it receives x data and returns als
     factor    : Constant factor that multiplies the signal. (float)
     """
 
-    def __init__(self, ref_point=(1.0,1.0), shift=0):
-        self.ammount = ref_point
+    def __init__(self, highlim, lowlim=0.):
+        self.highlim = highlim
+        self.lowlim = lowlim
 
     def __call__(self, data):
-        common = _ManualTiltCommon(self.ammount, data.domain)
+        common = _ManualTiltCommon(self.highlim, self.lowlim, data.domain)
         atts = [a.copy(compute_value=SelectColumn(i, common))
                 for i, a in enumerate(data.domain.attributes)]
             
