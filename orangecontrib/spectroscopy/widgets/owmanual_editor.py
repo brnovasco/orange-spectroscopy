@@ -1,4 +1,8 @@
+import sys
 import numpy as np
+import pyqtgraph as pg
+from decimal import Decimal
+
 import Orange.data
 
 from AnyQt.QtCore import Qt, QRectF, QPointF, QSize
@@ -10,6 +14,7 @@ from Orange.widgets import gui, settings
 from Orange.widgets.widget import OWWidget, Input, Output, OWBaseWidget, Msg
 from Orange.widgets.settings import Setting, ContextSetting, DomainContextHandler, SettingProvider
 from Orange.widgets.utils.concurrent import TaskState, ConcurrentWidgetMixin, ConcurrentMixin
+from orangecontrib.spectroscopy.widgets.preprocessors.utils import SetXDoubleSpinBox
 from orangecontrib.spectroscopy.preprocess.utils import SelectColumn
 from orangecontrib.spectroscopy.util import getx
 from orangecontrib.spectroscopy.widgets.gui import MovableHline, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
@@ -54,24 +59,15 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         super().__init__()
         ConcurrentWidgetMixin.__init__(self)
 
+        self.data = None
         self.lowlim = 0.
-        self.highlim = 1.
+        self.highlim = 0.
+        self.slope = 0.
 
         box = gui.widgetBox(self.controlArea, "Map grid")
 
-        form = QWidget()
-        formlayout = QFormLayout()
-        form.setLayout(formlayout)
-        box.layout().addWidget(form)
-
-        self._lowlim_le = lineEditFloatRange(box, self, "lowlim", callback=self.commit)
-        formlayout.addRow("Low Limit", self._lowlim_le)
-        self._highlim_le = lineEditFloatRange(box, self, "highlim", callback=self.commit)
-        formlayout.addRow("High Limit", self._highlim_le)
-
-        self._lowlim_le.focusIn.connect(self.activateOptions)
-        self._highlim_le.focusIn.connect(self.activateOptions)
-        self.focusIn = self.activateOptions
+        gui.spin(box, self, "slope", 0., sys.float_info.max, step=0.001, label="Slope Spin",
+                 callback=self._spin_update_slope, spinType=float)
 
         splitter = QSplitter(self)
         splitter.setOrientation(Qt.Vertical)
@@ -85,84 +81,121 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         splitter.addWidget(self.plot_out)
 
         self.mainArea.layout().addWidget(splitter)
+        def rounded(line):
+            return float(line.rounded_value())
+        
+        self.refLine = MovableHline(position=self.highlim, label="", report=self.plot_in)
+        self.refLine.sigMoved.connect(lambda _: self.moveLine(rounded(self.refLine)))
+        self.plot_in.add_marking(self.refLine)
 
-        # self.line1 = MovableHline(position=self.lowlim, label="", report=self.plot_in)
-        # self.line1.sigMoved.connect(lambda v: setattr(self, "lowlim", v))
-        self.line2 = MovableHline(position=self.highlim, label="", report=self.plot_in)
-        self.line2.sigMoved.connect(lambda v: setattr(self, "highlim", v))
-        # for line in [self.line1, self.line2]:
-        #     self.plot_in.add_marking(line)
-            # line.hide()
-        self.plot_in.add_marking(self.line2)
+        color=(225, 0, 0)
 
-        self.data = None
+        pen = pg.mkPen(color=color, width=2)
+        
+
+        self.diagonalLine = pg.InfiniteLine(angle=self._in_degrees(self.slope), pen=pen, hoverPen=None, movable=False, span=(0, 2))
+        self.plot_in.add_marking(self.diagonalLine)
+
         self.user_changed = False
-        self.plot_out.show()
+        # self.plot_in.show()
+        # self.plot_out.show()
 
         gui.auto_commit(self.controlArea, self, "autocommit", "Send Data")
         self._change_input()
+
+    def _in_degrees(self, slope):
+        return np.degrees(np.arctan(float(slope)))
 
     def _change_input(self):
         self.commit.deferred()
 
     def activateOptions(self):
+        print(">>>> on activateOptions")
         self.plot_in.clear_markings() 
         self.plot_out.clear_markings()
-        # for line in [self.line1, self.line2]:
-        #     line.report = self.plot_in
-        #     self.plot_in.add_marking(line)
-        self.line2.report = self.plot_in
-        self.plot_in.add_marking(self.line2)
+        self.refLine.report = self.plot_in
+        self.plot_in.add_marking(self.refLine)
+        self.plot_in.add_marking(self.diagonalLine)
 
     @Inputs.data
     def set_data(self, data):
+        print(">>>> on set_data (Input)")
         self.data = data
         self.plot_in.set_data(data)
-    
-    # def limits_etited_le(self, params):
-    #     if params: #parameters were manually set somewhere else
-    #         self.user_changed = True
-    #     self.lowlim = params.get("lowlim", 0.)
-    #     self.highlim = params.get("highlim", 1.)
+        self._init_slope()
 
-    def setParameters(self, params):
-        print("setParameters")
-        if params: #parameters were manually set somewhere else
-            self.user_changed = True
-        self.lowlim = params.get("lowlim", 0.)
-        self.highlim = params.get("highlim", 1.)
+    def on_done(self, out_data):
+        print(">>>> on_done")
+        self.plot_out.set_data(out_data) # set data to plot_out
+        self.Outputs.data_edited.send(out_data) # send data to Output
+
+    def _update_lines(self):
+        print(">>>> updating lines", self._in_degrees(self.slope))
+        self.refLine.setValue(self.highlim)
+        self.diagonalLine.setAngle(self._in_degrees(self.slope))
+
+    def _init_slope(self):
+        data_array = self.data.X
+        data_max, data_min = np.max(data_array), np.min(data_array) 
+        print(">>>>> init slope: setting new value to highlim from  = {} + {} /2".format(data_max, data_min))
+        self.highlim = (data_max + data_min)/2
+        self.update_slope()
+        self._update_lines()
+        self.activateOptions()
+
+    def _calculate_slope(self):
+        print(">>>> calculate_slope")
+        xax = getx(self.data)
+        x_max, x_0 = xax[-1], xax[0]
+        sloperads = (self.highlim - self.lowlim) / (x_max - x_0) 
+        return sloperads
+
+    def update_slope(self):
+        print(">>>> update_slope")
+        # when the line position is changed, changes the slope value
+        if self.data is not None:
+            self.slope = Decimal(self._calculate_slope())
+            self._update_lines()
+            print(">>>>> line update: setting new value to slope = {} with highlim {}".format(self.slope, self.highlim))
+        else:
+            self.slope = 0.
+        self.commit.deferred()
+
+    def _spin_update_slope(self):
+        print(">>>> _spin_update_slope")
+        # when slope is manually changed, changes the line position
+        if self.data is not None:
+            xax = getx(self.data)
+            x_max, x_0 = xax[-1], xax[0]
+            self.highlim = Decimal(self.slope * (x_max - x_0))
+            print(">>>>> spin update: setting new value to highlim = {} with slope {}".format(self.highlim, self.slope))
+            # self.refLine.setValue(self.highlim)
+            self._update_lines()
+            self.activateOptions()
+        else:
+            self.slope = 0.
+            self._update_lines()
+        self.commit.deferred()
     
-    # def on_done(self, data_edited):
-    #     print("on_done")
-    #     self.Outputs.data_edited.send(data_edited)
+    def moveLine(self, value, user=True):
+        print(">>>> moveLine")
+        if user:
+            self.user_changed = True
+        if self.highlim != value:
+            self.highlim = value
+            self.update_slope()
 
     @gui.deferred
     def commit(self):
-        print("commit", self.lowlim, self.highlim)
-        if self.data is None:
-            return
-        out_data = ManualTilt(lowlim=floatornone(self.lowlim), highlim=floatornone(self.highlim))(self.data)
-        self.plot_out.set_data(out_data)
-        self.Outputs.data_edited.send(out_data)
+        print(">>>> on commit")
+        if self.data is not None:
+            # calculate out_data
+            out_data = ManualTilt(lowlim=floatornone(self.lowlim), highlim=floatornone(self.highlim))(self.data)
+            self.on_done(out_data)
 
     def handleNewSignals(self):
+        print(">>>> on handleNewSignals")
         self.commit.deferred()
-
-    # def _calc_manual_tilt(self):
-    #     print("calc manual tilt")
-    #     xax = getx(self.data)
-    #     print("getx", xax)
-    #     sloperad = (self.highlim - self.lowlim) / (xax[-1] - xax[0])
-    #     # creating a line that passes through y = 0 and slope = self.ammount 
-    #     inclined_curve = (xax - xax[0]) * np.tan(sloperad) # (not ideal) should calcullate slope in the frontend so user can see it as the line moves and then pass it as argument np.tan(np.deg2rad(self.ammount))
-    #     new_X =  self.data.X - inclined_curve
-    #     print("domain problems ", self.data.domain.attributes)
-    #     atts = [a.copy(compute_value=SelectColumn(i, new_X))
-    #             for i, a in enumerate(self.data.domain.attributes)]
-    #     print("atts", atts)    
-    #     # domain = Orange.data.Domain(atts, self.data.domain.class_vars,
-    #     #                             self.data.domain.metas)
-    #     # return self.data.from_table(domain, self.data)
 
     # @staticmethod
     # def createinstance(params):
@@ -172,30 +205,6 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
     #     highlim = params.get("highlim", None)
     #     out_data = ManualTilt(lowlim=floatornone(lowlim), highlim=floatornone(highlim))
     #     return out_data
-
-    # def set_preview_data(self, data):
-    #     self.Warning.out_of_range.clear()
-    #     x = getx(data)
-    #     if len(x):
-    #         minx = np.min(x)
-    #         maxx = np.max(x)
-    #         range = maxx - minx
-
-    #         init_lowlim = round_virtual_pixels(minx + 0.1 * range, range)
-    #         init_highlim = round_virtual_pixels(maxx - 0.1 * range, range)
-
-    #         self._lowlime.set_default(init_lowlim)
-    #         self._highlime.set_default(init_highlim)
-
-    #         if not self.user_changed:
-    #             self.lowlim = init_lowlim
-    #             self.highlim = init_highlim
-    #             self.edited.emit()
-
-    #         if (self.lowlim < minx and self.highlim < minx) \
-    #                 or (self.lowlim > maxx and self.highlim > maxx):
-    #             self.parent_widget.Warning.preprocessor()
-    #             self.Warning.out_of_range()
 
 if __name__ == "__main__":  # pragma: no cover
     from Orange.widgets.utils.widgetpreview import WidgetPreview

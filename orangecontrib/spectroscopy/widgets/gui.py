@@ -522,16 +522,19 @@ class MovableHline(pg.UIGraphicsItem):
     sigMoveFinished = Signal(object)
     sigMoved = Signal(object)
 
-    def __init__(self, position=0., label="", color=(225, 0, 0), report=None):
+    def __init__(self, position=0., label="", report=None):
         pg.UIGraphicsItem.__init__(self)
+
+        
         self.moving = False
         self.mouseHovering = False
         self.report = report
-        self.color = color
         self.isnone = False
+        lightgray = (128,128,128)
+        self.color = lightgray
 
-        hp = pg.mkPen(color=color, width=3)
-        np = pg.mkPen(color=color, width=2)
+        hp = pg.mkPen(color=lightgray, width=3)
+        np = pg.mkPen(color=lightgray, width=2, style=Qt.DashLine)
 
         self.line = pg.InfiniteLine(angle=0, movable=True, pen=np, hoverPen=hp)
         self.line.setParentItem(self)

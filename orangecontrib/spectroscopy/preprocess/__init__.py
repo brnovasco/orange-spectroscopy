@@ -946,10 +946,10 @@ class MovingAverage(Preprocess):
                                     data.domain.metas)
         return data.from_table(domain, data)
 
+# TODO remove this from preprocessors
 class _ManualTiltCommon(CommonDomain):
 
     def __init__(self, highlim, lowlim, domain):
-        print("manual tilt common init?")
         super().__init__(domain)
         self.highlim = highlim
         self.lowlim = lowlim
