@@ -20,7 +20,7 @@ from orangecontrib.spectroscopy.util import getx
 from orangecontrib.spectroscopy.widgets.gui import MovableHline, lineEditFloatRange, floatornone, MovableVline, lineEditDecimalOrNone,\
     pixels_to_decimals, float_to_str_decimals
 from orangecontrib.spectroscopy.widgets.owspectra import CurvePlot
-from orangecontrib.spectroscopy.preprocess import Cut,  ManualTilt
+from orangecontrib.spectroscopy.preprocess import DegTilt, Cut,  ManualTilt
 
 
 
@@ -60,14 +60,37 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         ConcurrentWidgetMixin.__init__(self)
 
         self.data = None
-        self.lowlim = 0.
-        self.highlim = 0.
+        # slope controls (in degrees)
         self.slope = 0.
+        self.slope_max = 90. # 90
+        self.slope_min = -90. # -90
 
         box = gui.widgetBox(self.controlArea, "Map grid")
 
-        gui.spin(box, self, "slope", 0., sys.float_info.max, step=0.001, label="Slope Spin",
-                 callback=self._spin_update_slope, spinType=float)
+        slope_spins = gui.hBox(box)
+
+        self.slope_step = .0001
+        # gui.lineEdit(box, self, "slope_step",  label="Slope step size", valueType=float)
+        gui.spin(slope_spins, self, "slope_step", -sys.float_info.max, sys.float_info.max, step=.0001, label="Slope Step",
+                 callback=self._update_slope, spinType=float)
+        
+        gui.spin(slope_spins, self, "slope", self.slope_min, self.slope_max, step=self.slope_step, label="Slope",
+                 callback=self._update_slope, spinType=float)
+
+        gui.hSlider(box, self, "slope", 0., minValue=self.slope_min, maxValue=self.slope_max, step=self.slope_step, label="Slope slider", 
+                    callback=self._update_slope, intOnly=False, labelFormat=" %.4f", createLabel=False)
+        
+        buttons = gui.hBox(box)
+        gui.button(buttons, self, "-10x", callback=self._buttonSlopeDDown)
+        gui.button(buttons, self, "-1x", callback=self._buttonSlopeDown)
+        gui.button(buttons, self, "+1x", callback=self._buttonSlopeUp)
+        gui.button(buttons, self, "+10x", callback=self._buttonSlopeUUp)
+
+        # shift in radians
+        self.shift = 0.
+        
+        gui.spin(box, self, "shift", -sys.float_info.max, sys.float_info.max, step=0.0001, label="Shift Spin",
+                 callback=self._update_shift, spinType=float)
 
         splitter = QSplitter(self)
         splitter.setOrientation(Qt.Vertical)
@@ -81,130 +104,100 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         splitter.addWidget(self.plot_out)
 
         self.mainArea.layout().addWidget(splitter)
-        def rounded(line):
-            return float(line.rounded_value())
-        
-        self.refLine = MovableHline(position=self.highlim, label="", report=self.plot_in)
-        self.refLine.sigMoved.connect(lambda _: self.moveLine(rounded(self.refLine)))
-        self.plot_in.add_marking(self.refLine)
 
-        color=(225, 0, 0)
-
-        pen = pg.mkPen(color=color, width=2)
-        
-
-        self.diagonalLine = pg.InfiniteLine(angle=self._in_degrees(self.slope), pen=pen, hoverPen=None, movable=False, span=(0, 2))
+        self.linepos = pg.Point(0,0) 
+        red = (255,0,0)#(128,128,128)
+        pen = pg.mkPen(color=red, width=2, style=Qt.DashLine)
+        self.diagonalLine = pg.InfiniteLine(pos=self.linepos, angle=float(self.slope), pen=pen, hoverPen=None, movable=False, span=(0, 2))
         self.plot_in.add_marking(self.diagonalLine)
 
         self.user_changed = False
-        # self.plot_in.show()
-        # self.plot_out.show()
 
         gui.auto_commit(self.controlArea, self, "autocommit", "Send Data")
-        self._change_input()
-
-    def _in_degrees(self, slope):
-        return np.degrees(np.arctan(float(slope)))
-
-    def _change_input(self):
-        self.commit.deferred()
-
-    def activateOptions(self):
-        print(">>>> on activateOptions")
-        self.plot_in.clear_markings() 
-        self.plot_out.clear_markings()
-        self.refLine.report = self.plot_in
-        self.plot_in.add_marking(self.refLine)
-        self.plot_in.add_marking(self.diagonalLine)
+        self._update_slope()
 
     @Inputs.data
     def set_data(self, data):
         print(">>>> on set_data (Input)")
         self.data = data
         self.plot_in.set_data(data)
-        self._init_slope()
+        self.set_slope_limits()
+        self._update_slope()
 
-    def on_done(self, out_data):
-        print(">>>> on_done")
-        self.plot_out.set_data(out_data) # set data to plot_out
-        self.Outputs.data_edited.send(out_data) # send data to Output
-
-    def _update_lines(self):
-        print(">>>> updating lines", self._in_degrees(self.slope))
-        self.refLine.setValue(self.highlim)
-        self.diagonalLine.setAngle(self._in_degrees(self.slope))
-
-    def _init_slope(self):
-        data_array = self.data.X
-        data_max, data_min = np.max(data_array), np.min(data_array) 
-        print(">>>>> init slope: setting new value to highlim from  = {} + {} /2".format(data_max, data_min))
-        self.highlim = (data_max + data_min)/2
-        self.update_slope()
-        self._update_lines()
-        self.activateOptions()
-
-    def _calculate_slope(self):
-        print(">>>> calculate_slope")
-        xax = getx(self.data)
-        x_max, x_0 = xax[-1], xax[0]
-        sloperads = (self.highlim - self.lowlim) / (x_max - x_0) 
-        return sloperads
-
-    def update_slope(self):
-        print(">>>> update_slope")
-        # when the line position is changed, changes the slope value
+    def set_slope_limits(self):
+        print(">>>> setting slope limits according to data")
+        # pass # more complicated than that
+        # set the shift to the mean of the data and the slope to the maximum value of the data
         if self.data is not None:
-            self.slope = Decimal(self._calculate_slope())
-            self._update_lines()
-            print(">>>>> line update: setting new value to slope = {} with highlim {}".format(self.slope, self.highlim))
+            x_ax = getx(self.data)
+            delta_x = x_ax[-1] - x_ax[0]
+            delta_data = np.max(self.data.X)-np.min(self.data.X)
+            self.slope = np.degrees(np.arctan(delta_data/delta_x))
+            self.shift = -np.mean(self.data.X)
+            self.slope_step = .01 * self.slope
+
+            print(">>>> print data mean {} data max {}, x: ({},{})".format(np.mean(self.data.X), np.max(self.data.X), x_ax[-1], x_ax[0]))
         else:
             self.slope = 0.
-        self.commit.deferred()
 
-    def _spin_update_slope(self):
-        print(">>>> _spin_update_slope")
-        # when slope is manually changed, changes the line position
-        if self.data is not None:
-            xax = getx(self.data)
-            x_max, x_0 = xax[-1], xax[0]
-            self.highlim = Decimal(self.slope * (x_max - x_0))
-            print(">>>>> spin update: setting new value to highlim = {} with slope {}".format(self.highlim, self.slope))
-            # self.refLine.setValue(self.highlim)
-            self._update_lines()
-            self.activateOptions()
-        else:
-            self.slope = 0.
-            self._update_lines()
-        self.commit.deferred()
+    def _buttonSlopeUp(self):
+        self._incrementSlope(1)
+
+    def _buttonSlopeUUp(self):
+        self._incrementSlope(10)
     
-    def moveLine(self, value, user=True):
-        print(">>>> moveLine")
-        if user:
-            self.user_changed = True
-        if self.highlim != value:
-            self.highlim = value
-            self.update_slope()
+    def _buttonSlopeDown(self):
+        self._incrementSlope(-1)
+
+    def _buttonSlopeDDown(self):
+        self._incrementSlope(-10)
+
+    def _incrementSlope(self, ammount):
+        self.slope += ammount*self.slope_step
+        self._update_slope()
+    
+    def _update_lines(self):
+        print(">>>> updating lines", float(self.slope))
+        self.plot_in.clear_markings() 
+        self.plot_out.clear_markings()
+        self.plot_in.add_marking(self.diagonalLine)
+        self.diagonalLine.setAngle(float(self.slope))
+        self.diagonalLine.setPos(self.linepos)
+
+    def _update_slope(self):
+        print(">>>> update_slope")
+        if self.data is not None:
+            self._update_lines()
+            self.commit.deferred()
+        else:
+            self.slope = 0.
+
+    def _update_shift(self):
+        print(">>>> update_slope")
+        if self.data is not None:
+            xax_min = getx(self.data)[0]
+            self.linepos = pg.Point(xax_min,self.shift) 
+            self._update_lines()
+            self.commit.deferred()
+            print(self.shift)
+        
 
     @gui.deferred
     def commit(self):
         print(">>>> on commit")
         if self.data is not None:
             # calculate out_data
-            out_data = ManualTilt(lowlim=floatornone(self.lowlim), highlim=floatornone(self.highlim))(self.data)
+            out_data = DegTilt(slope=float(self.slope), shift=float(self.shift))(self.data)
             self.on_done(out_data)
+
+    def on_done(self, out_data):
+        print(">>>> on_done")
+        self.plot_out.set_data(out_data) # set data to plot_out
+        self.Outputs.data_edited.send(out_data) # send data to Output
 
     def handleNewSignals(self):
         print(">>>> on handleNewSignals")
-        self.commit.deferred()
-
-    # @staticmethod
-    # def createinstance(params):
-    #     print("createinstance")
-    #     params = dict(params)
-    #     lowlim = params.get("lowlim", None)
-    #     highlim = params.get("highlim", None)
-    #     out_data = ManualTilt(lowlim=floatornone(lowlim), highlim=floatornone(highlim))
-    #     return out_data
+        self._update_slope()
 
 if __name__ == "__main__":  # pragma: no cover
     from Orange.widgets.utils.widgetpreview import WidgetPreview

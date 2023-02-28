@@ -983,3 +983,41 @@ class ManualTilt(Preprocess): # changeThis so it receives x data and returns als
         domain = Orange.data.Domain(atts, data.domain.class_vars,
                                     data.domain.metas)
         return data.from_table(domain, data)
+    
+
+class _DegTiltCommon(CommonDomain):
+
+    def __init__(self, slope, shift, domain):
+        super().__init__(domain)
+        self.slope = slope
+        self.shift = shift
+
+    def transformed(self, data):
+        xax = getx(data)
+        # creating a line that passes through the origin and has slope = self.slope 
+        inclined_line = (xax - xax[0]) * np.tan(np.radians(self.slope)) 
+        return data.X - inclined_line + self.shift
+
+
+class DegTilt(Preprocess): # changeThis so it receives x data and returns also the angle to be displayed?
+    """
+    Tilt the spectra by a inclined line crossing the origin and sope defined by the user in degrees.
+    The tilt operation is basically a subtraction of the signal by the values of the line on each point of the domain.
+
+    Parameters
+    ----------
+    slope  (float)   : Slope of the line that crosses the origin and is used to tilt (subctract the signal by the values of the line). 
+    """
+
+    def __init__(self, slope=0., shift=0.):
+        self.slope = slope
+        self.shift = shift
+
+    def __call__(self, data):
+        common = _DegTiltCommon(self.slope, self.shift, data.domain)
+        atts = [a.copy(compute_value=SelectColumn(i, common))
+                for i, a in enumerate(data.domain.attributes)]
+            
+        domain = Orange.data.Domain(atts, data.domain.class_vars,
+                                    data.domain.metas)
+        return data.from_table(domain, data)
