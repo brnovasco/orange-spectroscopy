@@ -1,6 +1,6 @@
-import sys
 import numpy as np
 import pyqtgraph as pg
+from sys import float_info
 
 import Orange.data
 
@@ -15,6 +15,35 @@ from orangecontrib.spectroscopy.util import getx
 from orangecontrib.spectroscopy.widgets.owspectra import CurvePlot
 from orangecontrib.spectroscopy.preprocess import DegTilt
 
+def calc_slope_extrema(data: Orange.data.Table):
+    """calc_slope_extrema Finds the maximum and minimum slope in relation 
+    to a referenc point in the beginnning (on the x axis) of the data arrays 
+    and the mean of the first element of each data arrays.
+
+    Args:
+        data (Orange.data.Table): Standard Orange data table input. 
+    """
+    def slope(dx, dy):
+        if dx != 0:
+            return np.degrees(np.arctan(dy/dx))
+        else:
+            return np.sign(dy)*90 # dy<0 -> -90, dy=0 -> 0, dy>0 -> 90
+    
+    vslope = np.vectorize(slope)
+        
+    xdom = getx(data)
+    xref = xdom[0]
+
+    y = data.X
+    yref = np.mean(y[:,0])
+
+    dx = xdom - xref
+    dy = y - yref
+
+    slopes = vslope(dx, dy)
+    extrema = np.min(slopes), np.max(slopes)
+                
+    return {'refpos': {'x':xref,'y':yref}, 'slope': extrema} 
 
 
 class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
@@ -97,7 +126,7 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
 
         # shift control in radians
         self.shift = 0.
-        gui.spin(box, self, "shift", -sys.float_info.max, sys.float_info.max, step=0.0001, label="Shift Spin",
+        gui.spin(box, self, "shift", -float_info.max, float_info.max, step=0.0001, label="Shift Spin",
                  callback=self._update_shift, spinType=float)
 
         # setting plot control variables
@@ -108,6 +137,15 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         # same padding used in other orange-spectroscopy widgets with CurvePlots
         self.plot_in.plot.vb.x_padding = 0.1005   
         self.plot_out.plot.vb.y_padding = 0.1005 
+        # setting labels
+        self.plot_in.label_xaxis = "Wavenumber"
+        self.plot_out.label_xaxis = "Wavenumber"
+        self.plot_in.label_yaxis = "Phase"
+        self.plot_out.label_yaxis = "Phase"
+        self.plot_in.label_title = "in_data"
+        self.plot_out.label_title = "out_data"
+        self.plot_in.labels_changed()
+        self.plot_out.labels_changed()
 
         # auxiliary controllable line plot in the same view of plot_in
         self.linepos = pg.Point(0,0) 
@@ -131,28 +169,24 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         print(">>>> on set_data (Input)")
         self.data = data
         self.plot_in.set_data(data)
-        self.set_diagonal_line_params()
+        self._init_slope_params()
         self._update_slope()
 
-    def set_diagonal_line_params(self):
+    def _init_slope_params(self):
         print(">>>> setting slope limits according to data")
-        # pass # more complicated than that
-        # set the shift to the mean of the data and the slope to the maximum value of the data
-        # TODO: init angle max and min based on data limits for slider controls
         if self.data is not None:
-            x_ax = getx(self.data)
-            delta_x = x_ax[-1] - x_ax[0]
-            data_min, data_max = np.min(self.data.X), np.max(self.data.X)
-            # setting the line as passing trough the point (x_0, )
-            slope = np.degrees(np.arctan((data_max - data_min)/delta_x))
+            params = calc_slope_extrema(self.data)
+            print(params)
+            self.slope_min, self.slope_max = params['slope']
+            slope = np.sum(self.slope_min + self.slope_max )/2
             self.slope = slope
             self.slope_spin_val = slope
-            self.linepos = pg.Point(x_ax[0], data_min)
-            self.shift = -data_min
-            self.slope_step = .01 * slope
-        else:
-            self.slope = 0.
-            self.slope_spin_val = 0.
+            x0, y0 = params['refpos'].values()
+            self.linepos = pg.Point(x0, y0)
+            self.shift = -y0
+            self.slope_step = .01 * (self.slope_max - self.slope_min)
+            self._updateSlopeRange()
+            # print("setting... ", y0, x0, self.slope, self.slope_step, self.slope_max, self.slope_min)
 
     def _updateSlopeRange(self):
         # TODO: validate min < max
@@ -162,8 +196,7 @@ class OWManualEditor(OWWidget, ConcurrentWidgetMixin):
         elif self.slope > self.slope_max:
             self.slope = self.slope_max
         print('Slope after update range {}'.format(self.slope))
-        slope = self.slope
-        self.slope_spin_val = slope
+        self.slope_spin_val = self.slope
         self.slope_slider.setValue(self.slope)
         self.slope_slider.setScale(minValue=self.slope_min, maxValue=self.slope_max, step=0.01*(self.slope_max-self.slope_min)/2)
         self._update_slope()

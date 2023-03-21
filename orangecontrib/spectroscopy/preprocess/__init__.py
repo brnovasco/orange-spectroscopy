@@ -999,7 +999,7 @@ class _DegTiltCommon(CommonDomain):
         return data.X - inclined_line + self.shift
 
 
-class DegTilt(Preprocess): # changeThis so it receives x data and returns also the angle to be displayed?
+class DegTilt(Preprocess): 
     """
     Tilt the spectra by a inclined line crossing the origin and sope defined by the user in degrees.
     The tilt operation is basically a subtraction of the signal by the values of the line on each point of the domain.
