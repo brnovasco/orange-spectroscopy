@@ -51,7 +51,7 @@ def calc_slope_extrema(data: Orange.data.Table, yref: int = 0):
 class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
     """OWManualTilt Widget with input controllers for adjusting manually the slope of a line of 
     reference that will be subtracted from the data. The user can vary its slope using a slider or 
-    setting its value in degrees in  a numerical input form. He can also change the vertical shift, 
+    setting its value in degrees in  a numerical input form. He can also change the vertical linear_coef, 
     in addition to editing the limits and step size of the slider controller.
 
     Attributes:
@@ -62,7 +62,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
     description = "Widget with input controllers for adjusting manually the slope of a line of " \
     "reference that will be subtracted from the data. The user can vary its slope using a slider or " \
     "setting its value in degrees in a numerical input form in addition to changing the vertical " \
-    "shift of the line, and editing the limits and step size of the slider."
+    "linear_coef of the line, and editing the limits and step size of the slider."
 
     class Inputs:
         data = Input("Data", Orange.data.Table, default=True)
@@ -105,17 +105,17 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         # grid control variable for input controllers (slider, spin and buttons)
         box = gui.widgetBox(self.controlArea, "Map grid")
 
-        # slope_controls box
-        slope_controls = gui.vBox(box, "Slope Controls")
+ 
+        
 
-        # self.slope_slider_hbox elements 
-        # TODO: Solve confictinn updating values in slope_spin_val and slope 
-        self.slope_slider_hbox = gui.hBox(slope_controls)
-        self.slope_slider = gui.hSlider(self.slope_slider_hbox, self, "slope", 0., minValue=self.slope_min, maxValue=self.slope_max, step=self.slope_step, label="Slope", 
+        # equation_box elements 
+        # TODO: Solve conficting updating values in slope_spin_val and slope 
+        
+
+        slope_controls = gui.vBox(box, "Slope Controls")
+        self.slope_slider = gui.hSlider(slope_controls, self, "slope", 0., minValue=self.slope_min, maxValue=self.slope_max, step=self.slope_step, label="Slope", 
                     callback=self._update_slope, intOnly=False, labelFormat="%0.4f", createLabel=False)
-        self.slope_spin_val = 0.
-        self.slope_spin = gui.spin(self.slope_slider_hbox, self, "slope_spin_val", self.slope_min, self.slope_max, step=self.slope_step, label=None,
-                callback=self._update_slope_spin, spinType=float, callbackOnReturn=True, decimals=4)
+        
         
         # slope_buttons elements
         slope_buttons = gui.hBox(slope_controls)
@@ -131,16 +131,18 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
                  callback=self._updateSlopeRange, spinType=float)
         gui.spin(slope_range, self, "slope_max", -90., 90., step=self.slope_step, label="Max", decimals=4,
                  callback=self._updateSlopeRange, spinType=float)
-
-        # shift control in radians
-        shiftbox = gui.vBox(box, "")
-        self.shift = 0.
-        gui.spin(shiftbox, self, "shift", -float_info.max, float_info.max, step=0.0001, label="Shift Spin",
-                 callback=self._update_shift, spinType=float)
         
-        equationbox = gui.vBox(box, "Line Equation")
-        self.equation = ''
-        gui.label(equationbox, self, label="%(equation)s")
+        # equation box controls
+        equation_box = gui.hBox(box, "Line Equation (y = x a + b)")
+        self.slope_spin_val = 0.
+        self.linear_coef = 0.
+        # equation
+        gui.widgetLabel(equation_box, label="y = x ")
+        gui.spin(equation_box, self, "slope_spin_val", self.slope_min, self.slope_max, step=self.slope_step, label=None,
+                callback=self._update_slope_spin, spinType=float, callbackOnReturn=True, decimals=4)
+        gui.label(equation_box, self, label=" +")
+        gui.spin(equation_box, self, "linear_coef", -float_info.max, float_info.max, step=0.0001, label=None,
+                 callback=self._update_linear_coef, spinType=float)
 
         # setting plot control variables
 
@@ -173,14 +175,6 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         gui.auto_commit(self.controlArea, self, "autocommit", "Send Data")
         # self._update_slope()
     
-    def _set_equation(self):
-        angular = np.tan(np.radians(self.slope))
-        linear = -self.shift
-        if np.sign(linear) < 0:
-            signal = '-'
-        else:
-            signal = '+'
-        self.equation = 'y = {} x {} {}'.format(angular, signal, linear)
 
     @Inputs.data
     def set_data(self, data):
@@ -194,7 +188,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         return calc_slope_extrema(self.data)
 
     def _get_slope_params_update(self):
-        return calc_slope_extrema(self.data, int(-self.shift))
+        return calc_slope_extrema(self.data, int(self.linear_coef))
     
     def _set_slope_params(self, params):
         if self.data is not None:
@@ -204,7 +198,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
             self.slope_spin_val = slope
             x0, y0 = params['refpos']
             self.linepos = pg.Point(x0, y0)
-            self.shift = -y0
+            self.linear_coef = y0
             self.slope_step = .01 * (self.slope_max - self.slope_min)
             self._updateSlopeRange()
 
@@ -257,7 +251,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         if self.data is not None:
             datamax = np.max(self.data)
             datamin = np.min(self.data)
-            yref = -self.shift # linear coefficient of the line
+            yref = self.linear_coef # linear coefficient of the line
             if yref < datamin:
                 self.plot_in.range_y1 = yref
                 self.plot_in.range_y2 = datamax
@@ -284,15 +278,15 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         else:
             self.slope = 0.
 
-    def _update_shift(self):
+    def _update_linear_coef(self):
         print(">>>> update_slope")
         if self.data is not None:
             xax_min = getx(self.data)[0]
-            self.linepos = pg.Point(xax_min,-self.shift)             
+            self.linepos = pg.Point(xax_min,-self.linear_coef)             
             self._set_slope_params(self._get_slope_params_update())
             self._update_lines()
             self.commit.deferred()
-            print(self.shift)
+            print(self.linear_coef)
 
         
     @gui.deferred
@@ -300,8 +294,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         print(">>>> on commit")
         if self.data is not None:
             # calculate out_data
-            self._set_equation()
-            out_data = DegTilt(slope=float(self.slope), shift=float(self.shift))(self.data)
+            out_data = DegTilt(slope=float(self.slope), shift=float(self.linear_coef))(self.data)
             self.on_done(out_data)
 
     def on_done(self, out_data):
