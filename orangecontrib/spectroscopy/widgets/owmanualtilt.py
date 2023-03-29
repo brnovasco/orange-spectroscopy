@@ -15,32 +15,56 @@ from orangecontrib.spectroscopy.util import getx
 from orangecontrib.spectroscopy.widgets.owspectra import CurvePlot
 
 class TiltLine(pg.InfiniteLine):
-    def __init__(self, pos=pg.Point(0, 0), angle=0., pen=None, movable=False, bounds=None, hoverPen=None, label=None, labelOpts=None, span=..., markers=None, name=None):
+    def __init__(self, pos=pg.Point(0, 0), angle=0., pen=None, movable=True, bounds=None, hoverPen=None, label=None, labelOpts=None, span=(0,1), markers=None, name=None):
         red = (255,0,0)#(128,128,128)
         pen = pg.mkPen(color=red, width=2, style=Qt.DashLine)
         super().__init__(pos, angle, pen, movable, bounds, hoverPen, label, labelOpts, span, markers, name)
     
-    def setYPos(self, ynew):
+    def _set_yPos(self, ynew):
         x, y = self.getPos()
-        pos = pg.Point(x, ynew) 
+        pos = pg.Point(x, float(ynew)) 
         self.setPos(pos)
 
-class SlopeControl:
+    def _set_slope(self, slope):
+        self.setAngle(float(slope))
+
+    def update_params(self, slope, ynew):
+        self._set_yPos(ynew)
+        self._set_slope(slope)
+
+
+class SlopeControl(OWWidget):
+    """ SlopeControl: defines an object wit useful information for the slope parameters handling and slope calcullation.
+    """
     def __init__(self):
+        super().__init__()
         self.val = 0.
         self.min = -90.
         self.max = 90.
         self.step = 1.
+        self.xref = 0.
+        self.yref = 0.
+        self.x = None
+        self.y = None
 
-    def updateSlope(self, val):
-        self.val = val
+    def updateData(self, data: Orange.data.Table):
+        self.y = data.X
+        self.x = getx(data)
+        self.xref = self.x[0]
+        self.yref = np.mean(self.y[:,0])
+        self.min, self.max, self.val = self._calcSlopes()
 
-    def updateParams(self, **kwargs):
-        self.min = kwargs.get('min')
-        self.max = kwargs.get('max')
-        self.step = kwargs.get('step')
+    def onUpdateRef(self):
+        # updating ref position doesn't change the previusly set self.val
+        self.min, self.max, _ = self._calcSlopes()
 
-    def _findSlopes(self, data):
+    def onUpdateSlope(self):
+        if self.val < self.min:
+            self.min = self.val
+        elif self.max < self.val:
+            self.max = self.val
+
+    def _calcSlopes(self):
         """Calculate the slopes in relation to a reference point (xref, yref).
 
         Args:
@@ -61,57 +85,17 @@ class SlopeControl:
             except Exception as err:
                 print(f"Unexpected {err=}, {type(err)=}")
                 raise
+        # vectorized form of the slope function
         vslope = np.vectorize(slope)
-
         # skip the first column of the data and first element 
         # of the domain to avoid the infinity as dx == 0
-        dx = x[1:] - xref
-        dy = y[:,1:] - yref
+        dx = self.x[1:] - self.xref
+        dy = self.y[:,1:] - self.yref
         slopes = vslope(dx, dy)
-        return slopes
-
-    def initSlope(self, data: Orange.data.Table):
-        """Calcullates the extrema of the slopes of the data in relation to a 
-        reference point in the start value of the data with xref being the first value of the domain and 
-        yref being the mean of all the first elements of the data arrays. 
-
-        Args:
-            data (Orange.data.Table): Standard Orange data table input.
-
-        Returns:
-            dictionary: Dictionary containing the coordinates of the reference point used and the slope 
-            extrema, both as tuples.
-        """
-        y = data.X
-        x = getx(data)
-        xref = x[0]
-        yref = np.mean(y[:,0])
-        slopes = self._findSlopes(x, y, xref, yref)
-        # updating
-        self.min = np.min(slopes) 
-        self.max = np.max(slopes)
-        self.slope = np.mean([self.min, self.max]) 
-
-    def updateSlopeRef(self, data: Orange.data.Table, yref):
-        """Calcullates the extrema of the slopes of the data in relation to a 
-        reference point in the start value of the data with xref being the first value of the domain and 
-        yref being any value set by the user. 
-
-        Args:
-            data (Orange.data.Table): Standard Orange data table input.
-
-        Returns:
-            dictionary: Dictionary containing the coordinates of the reference point used and the slope 
-            extrema, both as tuples.
-        """
-        y = data.X
-        x = getx(data)
-        xref = x[0]
-        slopes = self._findSlopes(x, y, xref, yref)
-        # updating
-        self.min = np.min(slopes) 
-        self.max = np.max(slopes)
-        self.slope = np.mean([self.min, self.max]) 
+        min = np.min(slopes) 
+        max = np.max(slopes)
+        val = np.mean([self.min, self.max])
+        return min, max, val         
 
 class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
     """OWManualTilt Widget with input controllers for adjusting manually the slope of a line of 
@@ -144,9 +128,6 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
 
     plot_in = SettingProvider(CurvePlot)
     plot_out = SettingProvider(CurvePlot)
-
-    lowlim = Setting(None)
-    highlim = Setting(None)
 
     autocommit = settings.Setting(True)
 
@@ -186,14 +167,13 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
                  callback=self.handleSlopeRangeSpin, spinType=float)
         
         # equation editor controls
-        equation_box = gui.hBox(box, "Line Equation (y = x a + b)")
-        self.shift = 0.
-        gui.widgetLabel(equation_box, label="y = x ")
+        equation_box = gui.hBox(box, "Line Equation (y = x * a + b)")
+        gui.widgetLabel(equation_box, label="y = x * ")
         gui.spin(equation_box, self.slope, "val", self.slope.min, self.slope.max, step=self.slope.step, label=None,
-                callback=self.handleSlopeEquationSpin, spinType=float, callbackOnReturn=True, decimals=4)
+                callback=self.handleEquationSpinSlope, spinType=float, callbackOnReturn=True, decimals=4)
         gui.label(equation_box, self, label=" +")
-        gui.spin(equation_box, self, "shift", -float_info.max, float_info.max, step=0.001, label=None,
-                 callback=self.handleShiftSlider, spinType=float)
+        gui.spin(equation_box, self.slope, "yref", -float_info.max, float_info.max, step=0.001, label=None,
+                 callback=self.handleEquationSpinYref, spinType=float)
 
         # setting plot control variables
 
@@ -202,8 +182,8 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         self.plot_out = CurvePlot(self)
         # auxiliary line plot in the same view of plot_in prepresenting the desired tilt angle and phase shift 
         # manually adjusted by the user
-        self.tiltLine = TiltLine()
-        self.plot_in.add_marking(self.tiltLine)
+        self.tilt_line = TiltLine()
+        self.plot_in.add_marking(self.tilt_line)
         # setting labels
         self.plot_in.label_title = "in_data"
         self.plot_out.label_title = "out_data"
@@ -225,102 +205,96 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
     def set_data(self, data):
         self.data = data
         self.plot_in.set_data(data)
-        self.slope.initSlope(self.data)
-        # self.handleSlopeSlider() #TODO this shoudnt be here
-    
-    def _set_slope_params(self, params):
-        if self.data is not None:
-            self.slope_min, self.slope_max = params['slope']
-            self.slope = np.sum(self.slope_min + self.slope_max )/2
-            x0, y0 = params['refpos']
-            self.linepos = pg.Point(x0, y0)
-            self.shift = y0
-            self.slope.step = .01 * (self.slope_max - self.slope_min)
-            self.handleSlopeRangeSpin()
+        self.slope.updateData(self.data)
+        self._update_slider()
+        self._update_plots()
+        self.commit.deferred() 
 
-    def handleSlopeRangeSpin(self):
-        # TODO: validate min < max
-        # validate slope in range
-        if self.slope < self.slope_min:
-            self.slope = self.slope_min
-        elif self.slope > self.slope_max:
-            self.slope = self.slope_max
-        print('Slope after update range {}'.format(self.slope))
-        self.slope_slider.setValue(self.slope)
-        self.slope_slider.setScale(minValue=self.slope_min, maxValue=self.slope_max, step=0.01*(self.slope_max-self.slope_min)/2)
-        self.handleSlopeSlider()
+    def _update_slider(self):
+        # slider
+        print("update_slider", self.slope.val, self.slope.min, self.slope.max)
+        self.slope_slider.setValue(self.slope.val)
+        self.slope_slider.setScale(minValue=self.slope.min, maxValue=self.slope.max, step=self.slope.step)
 
-    def _buttonSlope1Up(self):
-        print("button increment +1")
-        self._incrementSlope(1)
-
-    def _buttonSlope10Up(self):
-        print("button increment +1")
-        self._incrementSlope(10)
-    
-    def _buttonSlope1Down(self):
-        print("button increment -1")
-        self._incrementSlope(-1)
-
-    def _buttonSlope10Down(self):
-        print("button increment -10")
-        self._incrementSlope(-10)
-
-    def _incrementSlope(self, ammount):
-        self.slope += ammount*self.slope.step
-        self.handleSlopeSlider()
-    
-    def _update_lines(self):
+    def _update_plots(self):
+        # clear views
         self.plot_in.clear_markings() 
         self.plot_out.clear_markings()
-        self.diagonal_line.setAngle(float(self.slope.val))
-        self.diagonal_line.setPos(self.linepos)
-        self.plot_in.add_marking(self.diagonal_line)
+        # update tilt_line params
+        self.tilt_line.update_params(self.slope.val, self.slope.yref)
+        # adding tilt_line to view and update view
+        self.plot_in.add_marking(self.tilt_line)
         self._reset_plot_in_viewrange()
     
     def _reset_plot_in_viewrange(self):
+        ymax = np.max(self.data)
+        ymin = np.min(self.data)
+        yref = self.slope.yref
+        if yref < ymin:
+            self.plot_in.range_y1 = yref
+            self.plot_in.range_y2 = ymax
+        elif ymax < yref:
+            self.plot_in.range_y1 = ymin
+            self.plot_in.range_y2 = yref
+        self.plot_in.set_limits()
+
+    def _buttonSlope1Up(self):
+        print("button increment +1")
+        self.handleSlopeChangeButtons(1)
+
+    def _buttonSlope10Up(self):
+        print("button increment +1")
+        self.handleSlopeChangeButtons(10)
+    
+    def _buttonSlope1Down(self):
+        print("button increment -1")
+        self.handleSlopeChangeButtons(-1)
+
+    def _buttonSlope10Down(self):
+        print("button increment -10")
+        self.handleSlopeChangeButtons(-10)
+
+    def handleSlopeChangeButtons(self, ammount):
         if self.data is not None:
-            datamax = np.max(self.data)
-            datamin = np.min(self.data)
-            yref = self.shift # linear coefficient of the line
-            if yref < datamin:
-                self.plot_in.range_y1 = yref
-                self.plot_in.range_y2 = datamax
-            elif yref > datamax:
-                self.plot_in.range_y1 = datamin
-                self.plot_in.range_y2 = yref
-            self.plot_in.set_limits()
+            self.slope.val += ammount*self.slope.step
+            self._update_slider()
+            self._update_plots()
+            self.commit.deferred()
+    
+    def handleSlopeRangeSpin(self):
+        # slope params are changed automatically, so, we do nothing here?
+        self._update_slider()
 
     def handleSlopeSlider(self):
         if self.data is not None:
-            self._update_lines()
+            self.slope.onUpdateSlope()
+            self._update_plots()
             self.commit.deferred()
-        else:
-            self.slope = 0.
 
-    def handleShiftSlider(self):
-        print(">>>> update_slope")
+    def handleEquationSpinSlope(self):
         if self.data is not None:
-            xax_min = getx(self.data)[0]
-            self.linepos = pg.Point(xax_min,-self.shift)             
-            self._set_slope_params(update_slope_extrema(self.data, self.shift))
-            self._update_lines()
+            self.slope.onUpdateSlope()
+            self._update_slider()
+            self._update_plots()
             self.commit.deferred()
-        
+    
+    def handleEquationSpinYref(self):
+        if self.data is not None:
+            self.slope.onUpdateRef()
+            self._update_slider()
+            self._update_plots()
+            self.commit.deferred()
+
     @gui.deferred
     def commit(self):
         if self.data is not None:
             # this is where the out_data is calcullated
-            out_data = DegTilt(slope=float(self.slope), shift=float(self.shift))(self.data)
+            out_data = DegTilt(slope=float(self.slope.val), shift=float(self.slope.yref))(self.data)
             self.on_done(out_data)
 
     def on_done(self, out_data):
         self.plot_out.set_data(out_data) # set data to plot_out
         self.Outputs.data_edited.send(out_data) # send data to Output
-
-    def handleNewSignals(self):
-        print(">>>> on handleNewSignals")
-        self.commit.now()
 
 if __name__ == "__main__":  # pragma: no cover
     from Orange.widgets.utils.widgetpreview import WidgetPreview
