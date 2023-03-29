@@ -6,8 +6,7 @@ import pyqtgraph as pg
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QSplitter, QWidget
 from Orange.widgets import gui, settings
-from Orange.widgets.settings import (DomainContextHandler, Setting,
-                                     SettingProvider)
+from Orange.widgets.settings import (DomainContextHandler, SettingProvider)
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin
 from Orange.widgets.widget import Input, Msg, Output, OWBaseWidget, OWWidget
 from orangecontrib.spectroscopy.preprocess import DegTilt
@@ -19,25 +18,20 @@ class TiltLine(pg.InfiniteLine):
         red = (255,0,0)#(128,128,128)
         pen = pg.mkPen(color=red, width=2, style=Qt.DashLine)
         super().__init__(pos, angle, pen, movable, bounds, hoverPen, label, labelOpts, span, markers, name)
-    
-    def _set_yPos(self, ynew):
-        x, y = self.getPos()
-        pos = pg.Point(x, float(ynew)) 
+
+    def update_params(self, slope, xpos, ypos):
+        pos = pg.Point(float(xpos), float(ypos)) 
         self.setPos(pos)
-
-    def _set_slope(self, slope):
         self.setAngle(float(slope))
-
-    def update_params(self, slope, ynew):
-        self._set_yPos(ynew)
-        self._set_slope(slope)
-
 
 class SlopeControl(OWWidget):
     """ SlopeControl: defines an object wit useful information for the slope parameters handling and slope calcullation.
     """
     def __init__(self):
         super().__init__()
+        self.setDefault()
+
+    def setDefault(self):
         self.val = 0.
         self.min = -90.
         self.max = 90.
@@ -53,10 +47,21 @@ class SlopeControl(OWWidget):
         self.xref = self.x[0]
         self.yref = np.mean(self.y[:,0])
         self.min, self.max, self.val = self._calcSlopes()
+    
+    def onReset(self):
+        self.xref = self.x[0]
+        self.yref = np.mean(self.y[:,0])
+        self.min, self.max, self.val = self._calcSlopes()
 
     def onUpdateRef(self):
         # updating ref position doesn't change the previusly set self.val
         self.min, self.max, _ = self._calcSlopes()
+    
+    def onUpdateLims(self):
+        # reset if entry is not valid
+        if self.max < self.min:
+            print("do I need this?")
+            self.min, self.max = -90., 90.
 
     def onUpdateSlope(self):
         if self.val < self.min:
@@ -94,7 +99,7 @@ class SlopeControl(OWWidget):
         slopes = vslope(dx, dy)
         min = np.min(slopes) 
         max = np.max(slopes)
-        val = np.mean([self.min, self.max])
+        val = np.mean([min, max])
         return min, max, val         
 
 class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
@@ -161,19 +166,20 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         # slope_range edit elements
         slope_range = gui.hBox(slope_controls)
         gui.label(slope_range, self,"Slope Range")
-        gui.spin(slope_range, self.slope, "min", -90., 90., step=self.slope.step, label="Min", decimals=4,
+        gui.spin(slope_range, self.slope, "min", minv=-90., maxv=self.slope.max, step=self.slope.step, label="Min", decimals=4,
                  callback=self.handleSlopeRangeSpin, spinType=float)
-        gui.spin(slope_range, self.slope, "max", -90., 90., step=self.slope.step, label="Max", decimals=4,
+        gui.spin(slope_range, self.slope, "max", minv=self.slope.min, maxv=90., step=self.slope.step, label="Max", decimals=4,
                  callback=self.handleSlopeRangeSpin, spinType=float)
         
         # equation editor controls
         equation_box = gui.hBox(box, "Line Equation (y = x * a + b)")
         gui.widgetLabel(equation_box, label="y = x * ")
-        gui.spin(equation_box, self.slope, "val", self.slope.min, self.slope.max, step=self.slope.step, label=None,
-                callback=self.handleEquationSpinSlope, spinType=float, callbackOnReturn=True, decimals=4)
+        gui.spin(equation_box, self.slope, "val", minv=-float_info.max, maxv=float_info.max, step=self.slope.step, label=None,
+                callback=self.handleEquationSpinSlope, spinType=float, decimals=4, controlWidth=100)
         gui.label(equation_box, self, label=" +")
-        gui.spin(equation_box, self.slope, "yref", -float_info.max, float_info.max, step=0.001, label=None,
-                 callback=self.handleEquationSpinYref, spinType=float)
+        gui.spin(equation_box, self.slope, "yref", minv=-float_info.max, maxv=float_info.max, step=0.0001, label=None,
+                 callback=self.handleEquationSpinYref, spinType=float, decimals=4, controlWidth=100)
+        gui.button(equation_box, self, "Reset", callback=self.handleResetSlope, autoDefault=False, width=100)
 
         # setting plot control variables
 
@@ -183,60 +189,86 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         # auxiliary line plot in the same view of plot_in prepresenting the desired tilt angle and phase shift 
         # manually adjusted by the user
         self.tilt_line = TiltLine()
-        self.plot_in.add_marking(self.tilt_line)
-        # setting labels
-        self.plot_in.label_title = "in_data"
-        self.plot_out.label_title = "out_data"
-        self.plot_in.labels_changed()
-        self.plot_out.labels_changed()
-        # padding 
-        self.plot_in.plot.vb.x_padding = 0.1005   
-        self.plot_out.plot.vb.y_padding = 0.1005 
-        # setting plot views
+        # setting plot view range
+        self.in_data_lims = {'x': (0, 0), 'y': (0, 0)}
+        # adjusting padding and plot info
+        self._set_plot_view()
+        # adding plots to splitter view
         splitter = QSplitter(self)
         splitter.setOrientation(Qt.Vertical)
         splitter.addWidget(self.plot_in)
         splitter.addWidget(self.plot_out)
         self.mainArea.layout().addWidget(splitter)
-
+        # setting auto commit after changes in the controls
         gui.auto_commit(self.controlArea, self, "autocommit", "Send Data")
     
     @Inputs.data
     def set_data(self, data):
         self.data = data
-        self.plot_in.set_data(data)
-        self.slope.updateData(self.data)
-        self._update_slider()
-        self._update_plots()
-        self.commit.deferred() 
+        if data is not None:
+            self.slope.updateData(data)
+            self._update_slider()
+            self.plot_in.set_data(data)
+            self._update_data_lims()
+            self._update_plots()
+            self.commit.deferred() 
+        else:
+            self.slope.setDefault() 
+            self._update_slider()
+            self.plot_in.set_data(data)
+            self._update_plots()
+            self.commit.deferred() 
 
     def _update_slider(self):
-        # slider
-        print("update_slider", self.slope.val, self.slope.min, self.slope.max)
         self.slope_slider.setValue(self.slope.val)
         self.slope_slider.setScale(minValue=self.slope.min, maxValue=self.slope.max, step=self.slope.step)
 
     def _update_plots(self):
         # clear views
         self.plot_in.clear_markings() 
-        self.plot_out.clear_markings()
         # update tilt_line params
-        self.tilt_line.update_params(self.slope.val, self.slope.yref)
+        self.tilt_line.update_params(self.slope.val, self.slope.xref, self.slope.yref)
         # adding tilt_line to view and update view
         self.plot_in.add_marking(self.tilt_line)
-        self._reset_plot_in_viewrange()
+        self._update_data_lims()
+        self._set_plot_view()
+
+    def _set_plot_view(self):
+        # setting labels
+        self.plot_in.label_title = "in_data"
+        self.plot_out.label_title = "out_data"
+        # splitter
+        self.plot_in.plot.vb.x_padding = 0.005  # pad view so that lines are not hidden
+        self.plot_out.plot.vb.x_padding = 0.005  # pad view so that lines are not hidden
+        self.plot_in.labels_changed()
+        self.plot_out.labels_changed()
+
+    def _update_data_lims(self):
+        if self.data is not None:
+            xmin, xmax = getx(self.data)[[0, -1]]
+            ymin, ymax = np.min(self.data), np.max(self.data)
+            # reference y coordinate (linear coefficient) from tilt_line that needs to be visible
+            yref = self.slope.yref
+            # checking y range
+            if yref < ymin:
+                ymin = yref
+            elif ymax < yref:
+                ymax = yref
+            # resetting view
+            self._reset_plot_in_viewrange(xlims=(xmin, xmax), ylims=(ymin, ymax))
     
-    def _reset_plot_in_viewrange(self):
-        ymax = np.max(self.data)
-        ymin = np.min(self.data)
-        yref = self.slope.yref
-        if yref < ymin:
-            self.plot_in.range_y1 = yref
-            self.plot_in.range_y2 = ymax
-        elif ymax < yref:
-            self.plot_in.range_y1 = ymin
-            self.plot_in.range_y2 = yref
-        self.plot_in.set_limits()
+    def _reset_plot_in_viewrange(self, xlims, ylims):
+        # data limits
+        xmin, xmax = xlims
+        ymin, ymax = ylims
+        # setting x range in plot_in
+        self.plot_in.range_x1 = xmin
+        self.plot_in.range_x2 = xmax
+        # setting y range in plot_in
+        self.plot_in.range_y1 = ymin
+        self.plot_in.range_y2 = ymax
+        # updating settings in component
+        self.plot_in.set_limits()         
 
     def _buttonSlope1Up(self):
         print("button increment +1")
@@ -260,10 +292,6 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
             self._update_slider()
             self._update_plots()
             self.commit.deferred()
-    
-    def handleSlopeRangeSpin(self):
-        # slope params are changed automatically, so, we do nothing here?
-        self._update_slider()
 
     def handleSlopeSlider(self):
         if self.data is not None:
@@ -281,9 +309,20 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
     def handleEquationSpinYref(self):
         if self.data is not None:
             self.slope.onUpdateRef()
-            self._update_slider()
+            self._update_data_lims()
             self._update_plots()
             self.commit.deferred()
+
+    def handleSlopeRangeSpin(self):
+        self.slope.onUpdateLims()
+        self._update_slider()
+
+    def handleResetSlope(self):
+        self.slope.onReset()
+        self._update_slider()
+        self._update_data_lims()
+        self._update_plots()
+        self.commit.deferred() 
 
     @gui.deferred
     def commit(self):
