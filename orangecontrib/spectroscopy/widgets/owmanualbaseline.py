@@ -1,3 +1,4 @@
+from functools import partial
 from sys import float_info
 
 import numpy as np
@@ -18,7 +19,7 @@ class TiltLine(pg.InfiniteLine):
     Creates a Red Dashed line that accept changes in angle and position in a CurvePlot object.
     """
     def __init__(self, pos=pg.Point(0, 0), angle=0., pen=None, movable=True, bounds=None, hoverPen=None, label=None, labelOpts=None, span=(0,1), markers=None, name=None):
-        red = (255,0,0)
+        red = (255,0,0, 127)
         pen = pg.mkPen(color=red, width=2, style=Qt.DashLine)
         super().__init__(pos, angle, pen, movable, bounds, hoverPen, label, labelOpts, span, markers, name)
 
@@ -118,21 +119,15 @@ class SlopeControl(OWWidget):
         val = np.mean([min, max])
         return min, max, val         
 
-class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
-    """OWManualTilt Widget with input controllers for adjusting manually the slope of a line of 
-    reference that will be subtracted from the data. The user can vary its slope using a slider or 
-    setting its value in degrees in  a numerical input form. He can also change the vertical shift, 
-    in addition to editing the limits and step size of the slider controller.
+class OWManualBaselineEditor(OWWidget, ConcurrentWidgetMixin):
+    """OWManualBaselineEditor Widget with input controllers for adjusting manually the baseline.
 
     Attributes:
         Inputs (Orange.data.Table): Default OWWidget Input containing multiple spectra
     """
 
-    name = "Manual Tilt"
-    description = "Widget with input controllers for adjusting manually the slope of a line of " \
-    "reference that will be subtracted from the data. The user can vary its slope using a slider or " \
-    "setting its value in degrees in a numerical input form in addition to changing the vertical " \
-    "shift of the line, and editing the limits and step size of the slider."
+    name = "Manual Baseline Editor"
+    description = "Widget for adjusting manually the baseline."
 
     class Inputs:
         data = Input("Data", Orange.data.Table, default=True)
@@ -169,26 +164,31 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         box = gui.widgetBox(self.controlArea, "Map grid")    
 
         slope_controls = gui.vBox(box, "Slope Controls")
+
+        # slope_range edit elements
+        slope_range = gui.hBox(slope_controls)
+        # gui.label(slope_range, self,"Slope Range")
+        gui.spin(slope_range, self.slope, "min", minv=-90., maxv=self.slope.max, step=self.slope.step, label="Min", decimals=4,
+                 callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
+        gui.spin(slope_range, self.slope, "step", minv=0., maxv=90., step=0.0001, label="Step", decimals=4,
+                 callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
+        gui.spin(slope_range, self.slope, "max", minv=self.slope.min, maxv=90., step=self.slope.step, label="Max", decimals=4,
+                 callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
+        
         self.slope_slider = gui.hSlider(slope_controls, self.slope, "val", 0., minValue=self.slope.min, maxValue=self.slope.max, step=self.slope.step, label="Slope", 
                     callback=self.handleSlopeSlider, intOnly=False, labelFormat="%0.4f", createLabel=False)
         
         # slope_buttons elements
         slope_buttons = gui.hBox(slope_controls)
-        gui.button(slope_buttons, self, "-10x", callback=self._buttonSlope10Down, autoDefault=False)
-        gui.button(slope_buttons, self, "-1x", callback=self._buttonSlope1Down, autoDefault=False)
-        gui.button(slope_buttons, self, "+1x", callback=self._buttonSlope1Up, autoDefault=False)
-        gui.button(slope_buttons, self, "+10x", callback=self._buttonSlope10Up, autoDefault=False)
-
-        # slope_range edit elements
-        slope_range = gui.hBox(slope_controls)
-        gui.label(slope_range, self,"Slope Range")
-        gui.spin(slope_range, self.slope, "min", minv=-90., maxv=self.slope.max, step=self.slope.step, label="Min", decimals=4,
-                 callback=self.handleSlopeRangeSpin, spinType=float)
-        gui.spin(slope_range, self.slope, "max", minv=self.slope.min, maxv=90., step=self.slope.step, label="Max", decimals=4,
-                 callback=self.handleSlopeRangeSpin, spinType=float)
+        gui.button(slope_buttons, self, "<<<", callback=partial(self.handleSlopeChangeButtons, -100), autoDefault=False, width=50)
+        gui.button(slope_buttons, self, "<<",  callback=partial(self.handleSlopeChangeButtons, -10), autoDefault=False, width=50)
+        gui.button(slope_buttons, self, "<",   callback=partial(self.handleSlopeChangeButtons, -1), autoDefault=False, width=50)
+        gui.button(slope_buttons, self, ">",   callback=partial(self.handleSlopeChangeButtons, 1), autoDefault=False, width=50)
+        gui.button(slope_buttons, self, ">>",  callback=partial(self.handleSlopeChangeButtons, 10), autoDefault=False, width=50)
+        gui.button(slope_buttons, self, ">>>", callback=partial(self.handleSlopeChangeButtons, 100), autoDefault=False, width=50)
         
         # equation editor controls
-        equation_box = gui.hBox(box, "Line Equation (y = x * tan(a) + b)")
+        equation_box = gui.hBox(box, "Baseline Equation (y = x * tan(a) + b)")
         gui.spin(equation_box, self.slope, "val", minv=-float_info.max, maxv=float_info.max, step=self.slope.step, label="a:",
                 callback=self.handleEquationSpinSlope, spinType=float, decimals=4, controlWidth=100)
         gui.spin(equation_box, self.slope, "yref", minv=-float_info.max, maxv=float_info.max, step=0.0001, label="b:",
@@ -254,6 +254,7 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         self.tilt_line.update_params(self.slope.val, self.slope.xref, self.slope.yref)
         # adding tilt_line to view and update view
         self.plot_in.add_marking(self.tilt_line)
+        self.plot_in.set_data(self.data)
         self._update_data_lims()
         self._set_plot_labels_and_padding()
 
@@ -305,34 +306,14 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
         # updating settings in component
         self.plot_in.set_limits()         
 
-    def _buttonSlope1Up(self):
-        """_buttonSlope1Up Incremental change of the slope value for 1x the slope.step value
-        """
-        self.handleSlopeChangeButtons(1)
-
-    def _buttonSlope10Up(self):
-        """_buttonSlope10Up incremental change of the slope value for 10x the slope.step value
-        """
-        self.handleSlopeChangeButtons(10)
-    
-    def _buttonSlope1Down(self):
-        """_buttonSlope1Down incremental change of the slope value for -1x the slope.step value
-        """
-        self.handleSlopeChangeButtons(-1)
-
-    def _buttonSlope10Down(self):
-        """_buttonSlope10Down incremental change of the slope value for -10x the slope.step value
-        """
-        self.handleSlopeChangeButtons(-10)
-
     def handleSlopeChangeButtons(self, ammount):
         """handleSlopeChangeButtons Handles all incremental changes of the slope value callbacks: 
         Changes self.slope.val in the quantity ammmount*self.slope.step.
 
         _buttonSlope1Up
         _buttonSlope10Up
-        _buttonSlope1Down
-        _buttonSlope10Down
+        _buttonL
+        _buttonLL
 
         Args:
             ammount (float): value of the ammount of steps (positive and negative) to be incremented to the slope
@@ -404,4 +385,4 @@ class OWManualTilt(OWWidget, ConcurrentWidgetMixin):
 
 if __name__ == "__main__":  # pragma: no cover
     from Orange.widgets.utils.widgetpreview import WidgetPreview
-    WidgetPreview(OWManualTilt).run(Orange.data.Table("iris.tab"))
+    WidgetPreview(OWManualBaselineEditor).run(Orange.data.Table("iris.tab"))
