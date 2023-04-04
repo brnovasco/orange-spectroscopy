@@ -72,11 +72,12 @@ class SlopeControl(OWWidget):
         self.min, self.max, _ = self._calcSlopes()
     
     def onUpdateLims(self):
-        """onUpdateLims Reset limits if values are not valid
+        """onUpdateLims Reset limits if values are not valid and updates step for 1% of the value of the range limits (max-min)
         """
         if self.max < self.min:
             min, max = self.min, self.max
             self.min, self.max = max, min
+        self.step = .01*(self.max - self.min)
 
     def onUpdateSlope(self):
         """onUpdateSlope Reset min and max values to accomodate self.val
