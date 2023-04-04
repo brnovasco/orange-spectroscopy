@@ -172,7 +172,7 @@ class OWManualBaselineEditor(OWWidget, ConcurrentWidgetMixin):
         gui.spin(slope_range, self.slope, "min", minv=-90., maxv=self.slope.max, step=self.slope.step, label="Min", decimals=4,
                  callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
         gui.spin(slope_range, self.slope, "step", minv=0., maxv=90., step=0.0001, label="Step", decimals=4,
-                 callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
+                 callback=self._update_slider, spinType=float, orientation='above')
         gui.spin(slope_range, self.slope, "max", minv=self.slope.min, maxv=90., step=self.slope.step, label="Max", decimals=4,
                  callback=self.handleSlopeRangeSpin, spinType=float, orientation='above')
         
