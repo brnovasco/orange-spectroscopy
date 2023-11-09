@@ -1,4 +1,5 @@
 from html.parser import HTMLParser
+import re
 
 import Orange
 import numpy as np
@@ -311,3 +312,105 @@ class NeaReaderGSF(FileFormat, SpectralFileFormat):
     def _gsf_reader(self, path):
         X, _, _ = reader_gsf(path)
         return np.asarray(X)
+    
+class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
+
+    EXTENSIONS = (".txt",)
+    DESCRIPTION = 'NeaSPEC multi channel raw txt'
+
+    def read_spectra(self):
+        path = self.filename
+        # reading the file to get the number of rows starting with an '# ' symbol 
+        # for getting the header info and its length
+        # and separating the header from the data and its column headers
+        headerLength = 0
+        header = []
+        with open(path, 'r') as f:
+            data = f.readlines()
+            header = [row for row in data if row.startswith('#')]
+            headerLength = len(header)
+            # if headerLen == 0:
+            #     return KeyError('No header found in the file, please check the file format')
+            tableDataHeaders = np.array(data[headerLength].strip().split('\t'))
+            tableDataValues = np.array([row.strip().split('\t') for row in data[headerLength+1:]]) 
+
+        # transforming the header into a dictionary
+        # parser for the header
+        def lineparser(line):
+            k,v = line.strip('# ').split(':\t')
+            v = v.strip().split('\t')
+            v = v[0] if len(v) == 1 else v
+            return k,v
+        # creating the dictionary, skipping the first line of the header
+        info = {}
+        for line in header[1:]:
+            k,v = lineparser(line)
+            info.update({k:v})
+
+        # reshaping the data from the tableData
+
+        # getting the index of the columns that contain the relevant data
+        validChannelCols = [i for i, header in enumerate(tableDataHeaders) if re.match(r'O[1-9][A,P]', header)]
+
+        # info related to the data shape and final metadata
+        # getting pixel area info from the header and relating pixel area info to column headers of the data
+        # rows, cols, depth = [int(i) for i in info['Pixel Area (X, Y, Z)'][1:]]
+        cols, rows, depth = [int(i) for i in info['Pixel Area (X, Y, Z)'][1:]]
+
+        # getting the number of runs from the header 
+        runs = int(info['Averaging'])
+
+        # defining the shape of the output data
+        outRows = len(validChannelCols)*runs*rows*cols
+        outCols = depth 
+        outDataHeaders = np.arange(0, depth, 1)
+        outData = np.zeros((outRows, outCols), dtype='float64')
+
+        # defining the shape of the metadata
+        outMetaHeaders = ['Row', 'Column', 'Run', 'Channel']
+        outMeta = np.zeros((outRows, len(outMetaHeaders)), dtype='<U10')
+
+        # getting the index of the columns that contain the relevant meta data
+        rowHeaderIndex = np.where(tableDataHeaders == 'Row')[0][0]
+        colHeaderIndex = np.where(tableDataHeaders == 'Column')[0][0]
+        runHeaderIndex = np.where(tableDataHeaders == 'Run')[0][0]
+
+        # filling the output data and metadata
+        # reading the data from the tableData rowise trough rows, columns and runs 
+        # and then columnwise trough the channels
+        # and inserting it into the output table as rows using the data depth as the new data columns
+        inputData = tableDataValues
+        channelsLen = len(validChannelCols)
+        for row in range(rows):
+            for column in range(cols):
+                for run in range(runs):
+                    loopStep = row*cols*runs + column*runs + run
+                    inputTableIndex = depth*loopStep
+                    dataRow = inputData[inputTableIndex, rowHeaderIndex]
+                    dataColumn = inputData[inputTableIndex, colHeaderIndex]
+                    dataRun = inputData[inputTableIndex, runHeaderIndex]
+                    for channel in range(channelsLen):
+                        outputTableIndex = loopStep*channelsLen + channel
+                        # get the selected column channel from row inputTableIndex to inputTableIndex + depth
+                        channelData = inputData[inputTableIndex:inputTableIndex + depth, validChannelCols[channel]]
+                        # insert this data into the output table as a row in the outputTableIndex
+                        outData[outputTableIndex, :] = channelData.transpose()
+                        channelName = tableDataHeaders[validChannelCols[channel]]
+                        outMeta[outputTableIndex, :] = [dataRow, dataColumn, dataRun, channelName] # np.array([dataRow, dataColumn, dataRun, channelName], dtype='<U10')
+
+        # formatting the metadata as it is expected by Orange
+        # metas = [Orange.data.ContinuousVariable.make("run"), Orange.data.StringVariable.make("channel")]
+        # why does it need column and row variables? 
+        metas = [Orange.data.ContinuousVariable.make("column"),
+                 Orange.data.ContinuousVariable.make("row"),
+                 Orange.data.ContinuousVariable.make("run"),
+                 Orange.data.StringVariable.make("channel")]
+        
+        domain = Orange.data.Domain([], None, metas=metas)
+        meta_data = Table.from_numpy(domain, X=np.zeros((len(outData), 0)), metas=np.asarray(outMeta, dtype=object))
+
+        # this info is used in the confirmation for complex fft calculation
+        info.update({'Reader': 'NeaReaderGSF'}) 
+        meta_data.attributes = info
+
+        return outDataHeaders, outData, meta_data
