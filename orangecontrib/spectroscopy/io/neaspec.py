@@ -396,7 +396,7 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                         # insert this data into the output table as a row in the outputTableIndex
                         outData[outputTableIndex, :] = channelData.transpose()
                         channelName = tableDataHeaders[validChannelCols[channel]]
-                        outMeta[outputTableIndex, :] = [dataRow, dataColumn, dataRun, channelName] # np.array([dataRow, dataColumn, dataRun, channelName], dtype='<U10')
+                        outMeta[outputTableIndex, :] = [dataColumn, dataRow, dataRun, channelName] # np.array([dataColumn, dataRow, dataRun, channelName], dtype='<U10')
 
         # formatting the metadata as it is expected by Orange
         # metas = [Orange.data.ContinuousVariable.make("run"), Orange.data.StringVariable.make("channel")]
