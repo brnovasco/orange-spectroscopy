@@ -231,6 +231,8 @@ class NeaReaderGSF(FileFormat, SpectralFileFormat):
             file_gsf_a = self.filename
             file_gsf_p = self.filename.replace("A raw.gsf", "P raw.gsf")
             file_html = folder_file + ".html"
+        else:
+            raise ValueError("Channel not found in file name")
 
         data_gsf_a = self._gsf_reader(file_gsf_a)
         data_gsf_p = self._gsf_reader(file_gsf_p)
