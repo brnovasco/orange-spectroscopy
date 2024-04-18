@@ -37,6 +37,11 @@ class IntegrateFeature(SharedComputeValue):
         if common is None:
             common = self.compute_shared(data)
         x_s, y_s = self.extract_data(data, common)
+        # draw_info is rarely called. The following assures
+        # that compute_draw_info will only need to work with numpy
+        # arrays, which then in turn are the assumed input in pyqtgraph
+        x_s = np.asarray(x_s)
+        y_s = np.asarray(y_s)
         return self.compute_draw_info(x_s, y_s)
 
     def extract_data(self, data, common):
@@ -67,17 +72,25 @@ class IntegrateFeature(SharedComputeValue):
         x_s, y_s = self.extract_data(data, common)
         return self.compute_integral(x_s, y_s)
 
+    def __disabled_eq__(self, other):
+        return super().__eq__(other) \
+               and self.limits == other.limits
+
+    def __disabled_hash__(self):
+        return hash((super().__hash__(), tuple(self.limits)))
+
 
 class IntegrateFeatureEdgeBaseline(IntegrateFeature):
     """ A linear edge-to-edge baseline subtraction. """
 
     name = "Integral from baseline"
+    InheritEq = True
 
     @staticmethod
     def parameters():
         return (("Low limit", "Low limit for integration (inclusive)"),
                 ("High limit", "High limit for integration (inclusive)"),
-            )
+                )
 
     def compute_baseline(self, x, y):
         if np.any(np.isnan(y)):
@@ -85,10 +98,10 @@ class IntegrateFeatureEdgeBaseline(IntegrateFeature):
         return edge_baseline(x, y)
 
     def compute_integral(self, x, y_s):
-        y_s = y_s - self.compute_baseline(x, y_s)
         if np.any(np.isnan(y_s)):
             # interpolate unknowns as trapz can not handle them
             y_s, _ = nan_extend_edges_and_interpolate(x, y_s)
+        y_s = y_s - self.compute_baseline(x, y_s)
         return np.trapz(y_s, x, axis=1)
 
     def compute_draw_info(self, x, ys):
@@ -100,6 +113,7 @@ class IntegrateFeatureEdgeBaseline(IntegrateFeature):
 class IntegrateFeatureSeparateBaseline(IntegrateFeature):
 
     name = "Integral from separate baseline"
+    InheritEq = True
 
     @staticmethod
     def parameters():
@@ -143,6 +157,7 @@ class IntegrateFeatureSimple(IntegrateFeatureEdgeBaseline):
     """ A simple y=0 integration on the provided data window. """
 
     name = "Integral from 0"
+    InheritEq = True
 
     def compute_baseline(self, x_s, y_s):
         return np.zeros(y_s.shape)
@@ -152,12 +167,13 @@ class IntegrateFeaturePeakEdgeBaseline(IntegrateFeature):
     """ The maximum baseline-subtracted peak height in the provided window. """
 
     name = "Peak from baseline"
+    InheritEq = True
 
     @staticmethod
     def parameters():
         return (("Low limit", "Low limit for integration (inclusive)"),
                 ("High limit", "High limit for integration (inclusive)"),
-            )
+                )
 
     def compute_baseline(self, x, y):
         return edge_baseline(x, y)
@@ -181,6 +197,7 @@ class IntegrateFeaturePeakSimple(IntegrateFeaturePeakEdgeBaseline):
     """ The maximum peak height in the provided data window. """
 
     name = "Peak from 0"
+    InheritEq = True
 
     def compute_baseline(self, x_s, y_s):
         return np.zeros(y_s.shape)
@@ -190,12 +207,13 @@ class IntegrateFeaturePeakXEdgeBaseline(IntegrateFeature):
     """ The X-value of the maximum baseline-subtracted peak height in the provided window. """
 
     name = "X-value of maximum from baseline"
+    InheritEq = True
 
     @staticmethod
     def parameters():
         return (("Low limit", "Low limit for integration (inclusive)"),
                 ("High limit", "High limit for integration (inclusive)"),
-            )
+                )
 
     def compute_baseline(self, x, y):
         return edge_baseline(x, y)
@@ -206,7 +224,7 @@ class IntegrateFeaturePeakXEdgeBaseline(IntegrateFeature):
             return np.zeros((y_s.shape[0],)) * np.nan
         # avoid whole nan rows
         whole_nan_rows = np.isnan(y_s).all(axis=1)
-        y_s[whole_nan_rows] = 0
+        y_s[whole_nan_rows, :] = 0
         # select positions
         pos = x_s[bottleneck.nanargmax(y_s, axis=1)]
         # set unknown results
@@ -226,6 +244,7 @@ class IntegrateFeaturePeakXSimple(IntegrateFeaturePeakXEdgeBaseline):
     """ The X-value of the maximum peak height in the provided data window. """
 
     name = "X-value of maximum from 0"
+    InheritEq = True
 
     def compute_baseline(self, x_s, y_s):
         return np.zeros(y_s.shape)
@@ -235,11 +254,12 @@ class IntegrateFeatureAtPeak(IntegrateFeature):
     """ Find the closest x and return the value there. """
 
     name = "Closest value"
+    InheritEq = True
 
     @staticmethod
     def parameters():
         return (("Closest to", "Nearest value"),
-            )
+                )
 
     def extract_data(self, data, common):
         data, x, x_sorter = common
@@ -269,6 +289,14 @@ class _IntegrateCommon(CommonDomain):
         x = getx(data)
         x_sorter = np.argsort(x)
         return data, x, x_sorter
+
+    def __disabled_eq__(self, other):
+        # pylint: disable=useless-parent-delegation
+        return super().__eq__(other)
+
+    def __disabled_hash__(self):
+        # pylint: disable=useless-parent-delegation
+        return super().__hash__()
 
 
 class Integrate(Preprocess):
