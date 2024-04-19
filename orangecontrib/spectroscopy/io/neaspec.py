@@ -383,10 +383,12 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         # reshaping the data from the tableData
 
         # getting the index of the columns that contain the relevant data
+        # ASSUMPTION: there are multiple channels with names following
+        # the format O[1-9]A and O[1-9]P for the amplitude and phase raw data
         valid_channel_cols = [
             i
-            for i, h in enumerate(table_data_headers)
-            if re.match(r"O[1-9][A,P]", header)
+            for i, dh in enumerate(table_data_headers)
+            if re.match(r"O[1-9][A,P]", dh)
         ]
 
         # info related to the data shape and final metadata
