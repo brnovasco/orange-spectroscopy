@@ -397,8 +397,10 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         for i, header in enumerate(table_data_headers):
             if re.match(r"O[1-9]", header):
                 if i % 2 == 0:
-                    combined_channel_data_headers.append(header)
-                    combined_channel_data.append(table_data_values[:, i] + table_data_values[:, i + 1])
+                    combined_channel_data_headers.append(header[0:2])
+                    amplitude = table_data_values[:, i]
+                    phase = table_data_values[:, i + 1]
+                    combined_channel_data.append(amplitude * phase)
 
         # info related to the data shape and final metadata
         # getting pixel area info from the header

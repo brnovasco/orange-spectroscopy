@@ -440,6 +440,7 @@ class OWFFT(OWWidget):
             return
         
         if self.reader == 'NeaReader_rawTXT':
+            self.stored_phase = None
             fft_single = irfft.ComplexFFT(
                     dx=self.dx,
                     apod_func=self.apod_func,
@@ -448,7 +449,7 @@ class OWFFT(OWWidget):
                     phase_corr=self.phase_corr,
                     peak_search=self.peak_search,
                     )
-            full_data = self.data.X[::2] * np.exp(self.data.X[1::2]* 1j)
+            full_data = self.data.X #[::2] * np.exp(self.data.X[1::2]* 1j)
             for row in full_data:
                 spectrum_out, phase_out, wavenumbers = fft_single(
                     row, zpd=stored_zpd_fwd)
@@ -458,8 +459,7 @@ class OWFFT(OWWidget):
 
             if self.limit_output is True:
                 wavenumbers, spectra = self.limit_range(wavenumbers, spectra)
-            self.spectra_table = build_spec_table(wavenumbers, spectra,
-                                                  additional_table=self.data)
+            self.spectra_table = build_spec_table(wavenumbers, spectra)
             self.Outputs.spectra.send(self.spectra_table)
             return
 
@@ -627,9 +627,9 @@ class OWFFT(OWWidget):
             self.controls.peak_search.setEnabled(True)
             self.controls.zpd1.setDisabled(True)
             self.controls.zpd2.setDisabled(True)
-            self.controls.phase_corr.setDisabled(True)
-            self.controls.phase_res_limit.setDisabled(True)
-            self.controls.phase_resolution.setDisabled(True)
+            self.controls.phase_corr.setDisabled(False)
+            self.controls.phase_res_limit.setDisabled(False)
+            self.controls.phase_resolution.setDisabled(False)
 
             info = self.data.attributes
             number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
@@ -640,7 +640,7 @@ class OWFFT(OWWidget):
             self.dx = step_size
             self.zff = 2 #Because is power of 2
 
-            self.infoc.setText(f"Hello! You should set manually the datapoint spacing (Δx) based on the input metadata info.\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
+            self.infoc.setText(f"Using automatic datapoint spacing (Δx). You can check its validity comparing it to the input delta_x metadata for each run.\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
             return
 
         try:
