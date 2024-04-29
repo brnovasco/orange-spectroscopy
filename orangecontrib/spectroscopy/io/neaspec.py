@@ -352,18 +352,30 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         # and separating the header from the data and its column headers
         header_length = 0
         header = []
+        table_data_headers = []
+        table_data_values = []
         with open(path, "r", encoding="utf-8") as f:
             data = f.readlines()
             header = [row for row in data if row.startswith("#")]
             header_length = len(header)
             if header_length == 0:
-                return KeyError(
+                raise KeyError(
                     "No header found in the file, please check the file format"
                 )
-            table_data_headers = np.array(data[header_length].strip().split("\t"))
-            table_data_values = np.array(
-                [row.strip().split("\t") for row in data[header_length + 1 :]]
-            )
+            try:
+                column_headers_line = data[header_length]
+                table_data_headers = np.array([dh.strip() for dh in column_headers_line.split("\t")], dtype="<U10")
+            except:
+                print(column_headers_line)
+                raise KeyError(
+                    "No column headers found in the file, please check the file format"
+                )
+            try:
+                table_data_values = np.array([row.strip().split("\t") for row in data[header_length + 1 :]], dtype="float64")
+            except:
+                raise KeyError(
+                    "No data found in the file, please check the file format"
+                )
 
         # transforming the header into a dictionary
 
