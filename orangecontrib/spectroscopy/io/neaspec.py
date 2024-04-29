@@ -363,19 +363,15 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                     "No header found in the file, please check the file format"
                 )
             try:
-                column_headers_line = data[header_length]
-                table_data_headers = np.array([dh.strip() for dh in column_headers_line.split("\t")], dtype="<U10")
-            except:
+                column_headers_line = data[header_length].strip()
+                table_data_headers = np.array([dh.strip() for dh in column_headers_line.split("\t") if dh], dtype="str")
+            except Exception as exc:
                 print(column_headers_line)
-                raise KeyError(
-                    "No column headers found in the file, please check the file format"
-                )
+                raise KeyError('No column headers found in the file, please check the file format') from exc
             try:
                 table_data_values = np.array([row.strip().split("\t") for row in data[header_length + 1 :]], dtype="float64")
-            except:
-                raise KeyError(
-                    "No data found in the file, please check the file format"
-                )
+            except  Exception as exc:
+                raise KeyError('No data found in the file, please check the file format') from exc
 
         # transforming the header into a dictionary
 
@@ -418,13 +414,18 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         out_data = np.zeros((out_rows, out_cols), dtype="float64")
 
         # defining the shape of the metadata
-        out_meta_headers = ["Row", "Column", "Run", "Channel"]
-        out_meta = np.zeros((out_rows, len(out_meta_headers)), dtype="<U10")
+        # out_meta_headers = ["Row", "Column", "Run", "Z", "delta_X", "Channel"]
+        # out_meta = np.zeros((out_rows, len(out_meta_headers)), dtype="<U10")
+        out_meta_ints = np.zeros((out_rows, 3), dtype="int") # Row, Column, Run
+        out_meta_floats = np.zeros((out_rows, 2), dtype="float") # Z, delta_X
+        out_meta_strs = np.zeros((out_rows, 1), dtype="<U10") # Channel
 
         # getting the index of the columns that contain the relevant meta data
         row_header_index = np.where(table_data_headers == "Row")[0][0]
         col_header_index = np.where(table_data_headers == "Column")[0][0]
         run_header_index = np.where(table_data_headers == "Run")[0][0]
+        z_header_index = np.where(table_data_headers == "Z")[0][0]
+        m_header_index = np.where(table_data_headers == "M")[0][0]
 
         # filling the output data and metadata
         # reading the data from the tableData rowise trough rows, columns and runs
@@ -440,6 +441,10 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                     data_row = input_data[input_table_index, row_header_index]
                     data_column = input_data[input_table_index, col_header_index]
                     data_run = input_data[input_table_index, run_header_index]
+                    z_array = input_data[input_table_index : input_table_index + depth, z_header_index]
+                    m_array = input_data[input_table_index : input_table_index + depth, m_header_index]
+                    mean_z = np.mean(z_array)
+                    delta_m = np.mean(np.diff(m_array))
                     for channel in range(channels_len):
                         output_table_index = loop_step * channels_len + channel
                         # get the selected column channel
@@ -451,20 +456,21 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                         # insert into the outputTableIndex table as a row
                         out_data[output_table_index, :] = channel_data.transpose()
                         channel_name = table_data_headers[valid_channel_cols[channel]]
-                        out_meta[output_table_index, :] = [
-                            data_column,
-                            data_row,
-                            data_run,
-                            channel_name,
-                        ]
+                        out_meta_ints[output_table_index, :] = [data_row, data_column, data_run]
+                        out_meta_floats[output_table_index, :] = [mean_z, delta_m]
+                        out_meta_strs[output_table_index] = channel_name
 
         # formatting the metadata as it is expected by Orange
         metas = [
             Orange.data.ContinuousVariable.make("column"),
             Orange.data.ContinuousVariable.make("row"),
             Orange.data.ContinuousVariable.make("run"),
+            Orange.data.ContinuousVariable.make("Z"),
+            Orange.data.ContinuousVariable.make("delta_M"),
             Orange.data.StringVariable.make("channel"),
         ]
+
+        out_meta = np.hstack((out_meta_ints, out_meta_floats, out_meta_strs))
 
         domain = Orange.data.Domain([], None, metas=metas)
         meta_data = Table.from_numpy(
@@ -474,7 +480,7 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         )
 
         # this info is used in the confirmation for complex fft calculation
-        info.update({"Reader": "NeaReaderGSF"})
+        info.update({"Reader": "NeaReader_rawTXT"})
         meta_data.attributes = info
 
         return out_data_headers, out_data, meta_data
