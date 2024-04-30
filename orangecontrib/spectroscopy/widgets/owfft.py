@@ -292,7 +292,7 @@ class OWFFT(OWWidget):
         grid.addWidget(lb3, 1, 4)
         grid.addWidget(cb3, 2, 0)
         grid.addWidget(lb4, 2, 1)
-        grid.addWidget(le4, 2, 2)
+        grid.addWidget(le4, 2, 2, 1, 2)
         self.outputBox.layout().addLayout(grid)
 
         gui.auto_commit(self.outputBox, self, "autocommit", "Calculate", box=False)
@@ -671,7 +671,7 @@ class OWFFT(OWWidget):
             self.dx = step_size
             self.zff = 2 #Because is power of 2
 
-            self.infoc.setText(f"Default datapoint spacing Δx:\t{self.dx:.8f} cm\nDefault Wavenumber Scaling factor: {self.wavenumber_scaling:.8f}\nApplying Complex Fourier Transform.")
+            self.infoc.setText(f"Default datapoint spacing Δx:\t{self.dx:.8} cm\nDefault Wavenumber Scaling factor: {self.wavenumber_scaling:.8f}\nApplying Complex Fourier Transform.")
             return
 
         try:
