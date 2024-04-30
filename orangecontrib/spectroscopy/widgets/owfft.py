@@ -69,6 +69,7 @@ class OWFFT(OWWidget):
     out_limit1 = settings.Setting(400)
     out_limit2 = settings.Setting(4000)
     autocommit = settings.Setting(False)
+    wavenumber_scaling = settings.Setting(1.0)
 
     sweep_opts = ("Single",
                   "Forward-Backward",
@@ -262,6 +263,12 @@ class OWFFT(OWWidget):
             self.outputBox, self, "out_limit2",
             callback=self.out_limit_changed,
             valueType=float, controlWidth=50
+            )  
+        le4 = gui.lineEdit(
+            self.outputBox, self, "wavenumber_scaling",
+            callback=self.setting_changed,
+            valueType=float,
+            disabled=False,
             )
         cb2 = gui.checkBox(
             self.outputBox, self, "limit_output",
@@ -271,11 +278,14 @@ class OWFFT(OWWidget):
             )
         lb2 = gui.widgetLabel(self.outputBox, "-")
         lb3 = gui.widgetLabel(self.outputBox, "cm<sup>-1</sup>")
+        lb4 = gui.widgetLabel(self.outputBox, "Wavenumber Scaling:")
         grid.addWidget(cb2, 0, 0, 1, 6)
         grid.addWidget(le2, 1, 1)
         grid.addWidget(lb2, 1, 2)
         grid.addWidget(le3, 1, 3)
         grid.addWidget(lb3, 1, 4)
+        grid.addWidget(lb4, 2, 0)
+        grid.addWidget(le4, 2, 1)
         self.outputBox.layout().addLayout(grid)
 
         gui.auto_commit(self.outputBox, self, "autocommit", "Calculate", box=False)
@@ -449,12 +459,11 @@ class OWFFT(OWWidget):
                     phase_corr=self.phase_corr,
                     peak_search=self.peak_search,
                     )
-            full_data = self.data.X #[::2] * np.exp(self.data.X[1::2]* 1j)
+            full_data = self.data.X
             for row in full_data:
                 spectrum_out, phase_out, wavenumbers = fft_single(
                     row, zpd=stored_zpd_fwd)
                 spectra.append(spectrum_out)
-                # spectra.append(phase_out)
                 phases.append(phase_out)
             spectra = np.vstack(spectra)
             phases = np.vstack(phases)
@@ -638,6 +647,7 @@ class OWFFT(OWWidget):
             self.controls.phase_resolution.setDisabled(False)
 
             info = self.data.attributes
+            self.wavenumber_scaling = float(info['Wavenumber Scaling'])
             number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
             scan_size = float(info['Interferometer Center/Distance'][2].replace(',', '')) #Microns
             scan_size = scan_size*1e-4 #Convert to cm
@@ -646,7 +656,7 @@ class OWFFT(OWWidget):
             self.dx = step_size
             self.zff = 2 #Because is power of 2
 
-            self.infoc.setText(f"Using automatic datapoint spacing (Δx). You can check its validity comparing it to the input delta_x metadata for each run.\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
+            self.infoc.setText(f"Default datapoint spacing Δx:\t{self.dx:.8f} cm\nDefault Wavenumber Scaling factor: {self.wavenumber_scaling:.8f}\nApplying Complex Fourier Transform.")
             return
 
         try:
