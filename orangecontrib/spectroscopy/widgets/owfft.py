@@ -454,13 +454,19 @@ class OWFFT(OWWidget):
                 spectrum_out, phase_out, wavenumbers = fft_single(
                     row, zpd=stored_zpd_fwd)
                 spectra.append(spectrum_out)
-                spectra.append(phase_out)
+                # spectra.append(phase_out)
+                phases.append(phase_out)
             spectra = np.vstack(spectra)
+            phases = np.vstack(phases)
 
             if self.limit_output is True:
                 wavenumbers, spectra = self.limit_range(wavenumbers, spectra)
-            self.spectra_table = build_spec_table(wavenumbers, spectra)
+            self.spectra_table = build_spec_table(wavenumbers, spectra,
+                                                  additional_table=self.data)
+            self.phases_table = build_spec_table(wavenumbers, phases,
+                                                    additional_table=self.data)
             self.Outputs.spectra.send(self.spectra_table)
+            self.Outputs.phases.send(self.phases_table)
             return
 
             
