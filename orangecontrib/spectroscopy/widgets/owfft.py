@@ -265,7 +265,6 @@ class OWFFT(OWWidget):
             callback=self.out_limit_changed,
             valueType=float, controlWidth=50
             )
-
         cb2 = gui.checkBox(
             self.outputBox, self, "limit_output",
             label="Limit spectral region:",
