@@ -70,7 +70,7 @@ class OWFFT(OWWidget):
     out_limit2 = settings.Setting(4000)
     autocommit = settings.Setting(False)
     rescale_wavenumber = settings.Setting(False)
-    wavenumber_scaling = settings.Setting(1.0)
+    wavenumber_scaling_factor = settings.Setting(1.0)
 
     sweep_opts = ("Single",
                   "Forward-Backward",
@@ -112,6 +112,8 @@ class OWFFT(OWWidget):
         self.reader = None
         if self.dx_HeNe is True:
             self.dx = 1.0 / self.laser_wavenumber / 2.0
+        self.rescale_wavenumber = False
+        self.wavenumber_scaling_factor = 1.0
 
         layout = QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -278,9 +280,9 @@ class OWFFT(OWWidget):
             label="Rescale wavenumbers:",
             callback=self.rescale_wavenumber_changed,
             )
-        lb4 = gui.widgetLabel(self.outputBox, "scaling")
+        lb4 = gui.widgetLabel(self.outputBox, "factor")
         le4 = gui.lineEdit(
-            self.outputBox, self, "wavenumber_scaling",
+            self.outputBox, self, "wavenumber_scaling_factor",
             callback=self.setting_changed,
             valueType=float,
             disabled=not(self.rescale_wavenumber),
@@ -300,6 +302,7 @@ class OWFFT(OWWidget):
         # Disable the controls initially (no data)
         self.dataBox.setDisabled(True)
         self.optionsBox.setDisabled(True)
+        self.outputBox.setDisabled(True)
 
     @Inputs.data
     def set_data(self, dataset):
@@ -316,11 +319,13 @@ class OWFFT(OWWidget):
             self.check_metadata()
             self.dataBox.setDisabled(False)
             self.optionsBox.setDisabled(False)
+            self.outputBox.setDisabled(False)
         else:
             self.data = None
             self.spectra_table = None
             self.dataBox.setDisabled(True)
             self.optionsBox.setDisabled(True)
+            self.outputBox.setDisabled(True)
             self.infoa.setText("No data on input.")
             self.infob.setText("")
             self.Outputs.spectra.send(self.spectra_table)
@@ -362,7 +367,7 @@ class OWFFT(OWWidget):
         self.commit.deferred()
 
     def rescale_wavenumber_changed(self):
-        self.controls.wavenumber_scaling.setDisabled(not self.rescale_wavenumber)
+        self.controls.wavenumber_scaling_factor.setDisabled(not self.rescale_wavenumber)
         self.commit.deferred()
 
     def peak_search_changed(self):
@@ -483,7 +488,7 @@ class OWFFT(OWWidget):
                 wavenumbers, spectra = self.limit_range(wavenumbers, spectra)
             # scale wavenumbers
             if self.rescale_wavenumber:
-                wavenumbers = wavenumbers * self.wavenumber_scaling
+                wavenumbers = wavenumbers * self.wavenumber_scaling_factor
             self.spectra_table = build_spec_table(wavenumbers, spectra,
                                                   additional_table=self.data)
             self.phases_table = build_spec_table(wavenumbers, phases,
@@ -648,9 +653,8 @@ class OWFFT(OWWidget):
             return
         
         if self.reader == 'NeaReader_rawTXT': # TODO Avoid the magic word
-            self.dx_HeNe = False
-            self.dx_HeNe_cb.setDisabled(False)
-            self.dx_edit.setDisabled(False)
+            message = "Enabling settings for NeaReader multichannel raw data"
+
             self.controls.auto_sweeps.setDisabled(True)
             self.controls.sweeps.setDisabled(True)
             self.controls.peak_search.setEnabled(True)
@@ -659,19 +663,36 @@ class OWFFT(OWWidget):
             self.controls.phase_corr.setDisabled(False)
             self.controls.phase_res_limit.setDisabled(False)
             self.controls.phase_resolution.setDisabled(False)
+            self.controls.rescale_wavenumber.setDisabled(False)
+            self.controls.wavenumber_scaling_factor.setDisabled(False)
+
+            self.phase_corr = self.phase_opts.index("None (real/imag)")
+            self.dx_HeNe = False
+            self.dx_HeNe_cb.setDisabled(False)
+            self.dx_edit.setDisabled(False)
+            self.rescale_wavenumber = True
+            self.zff = 2
 
             info = self.data.attributes
-            self.wavenumber_scaling = float(info['Wavenumber Scaling'])
-            self.rescale_wavenumber = True
-            number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
-            scan_size = float(info['Interferometer Center/Distance'][2].replace(',', '')) #Microns
-            scan_size = scan_size*1e-4 #Convert to cm
-            step_size = (scan_size * 2) / (number_of_points - 1)
-
-            self.dx = step_size
-            self.zff = 2 #Because is power of 2
-
-            self.infoc.setText(f"Default datapoint spacing Δx:\t{self.dx:.8} cm\nDefault Wavenumber Scaling factor: {self.wavenumber_scaling:.8f}\nApplying Complex Fourier Transform.")
+            try:
+                self.wavenumber_scaling_factor = float(info['Wavenumber Scaling'])
+                message+=f"\nWavenumber Scaling factor: {self.wavenumber_scaling_factor:.8f}"
+            except KeyError:
+                message+="\nWavenumber Scaling factor: Not found"
+                self.wavenumber_scaling_factor = 1.0
+            
+            try:
+                number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
+                scan_size = float(info['Interferometer Center/Distance'][2].replace(',', '')) #Microns
+                scan_size = scan_size*1e-4 #Convert to cm
+                step_size = (scan_size * 2) / (number_of_points - 1)
+                self.dx = step_size
+                message+=f"\nUsing calculated datapoint spacing (Δx) from metadata.\nΔx:\t{self.dx:.8} cm"
+            except KeyError:
+                message+="\nDatapoint spacing (Δx) info not found in metadata. Using default value."
+            
+            message+="\nApplying Complex Fourier Transform."
+            self.infoc.setText(message)
             return
 
         try:
