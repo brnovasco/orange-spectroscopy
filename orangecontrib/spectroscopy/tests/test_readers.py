@@ -10,7 +10,7 @@ from Orange.data.io import FileFormat
 from Orange.tests import named_file
 from Orange.widgets.data.owfile import OWFile
 from orangecontrib.spectroscopy.data import getx, build_spec_table
-from orangecontrib.spectroscopy.io.neaspec import NeaReader, NeaReaderGSF
+from orangecontrib.spectroscopy.io.neaspec import NeaReader, NeaReaderGSF, NeaReaderMultiChannelTXT
 from orangecontrib.spectroscopy.io.soleil import SelectColumnReader, HDF5Reader_HERMES
 from orangecontrib.spectroscopy.preprocess import features_with_interpolation
 from orangecontrib.spectroscopy.io import SPAReader
@@ -415,6 +415,18 @@ class TestNeaGSF(unittest.TestCase):
         self.assertEqual(n_ifg, len(data.domain.attributes))
         check_attributes(data)
 
+class TestNeaMultichannelTXT(unittest.TestCase):
+    def test_read(self):
+        fn = 'NeaReaderMultichannelTXT/NFS_Interferograms_TEST.txt'
+        absolute_filename = FileFormat.locate(fn, dataset_dirs)
+        data = NeaReaderMultiChannelTXT(absolute_filename).read()
+        self.assertEqual(len(data.X), 5)
+        self.assertEqual(data.X[0, 0], 1.00284722755027)
+        px = data.attributes['Pixel Area (X, Y, Z)']
+        self.assertEqual(px[1], '1')
+        self.assertEqual(px[2], '1')
+        self.assertEqual(px[3], '10')
+        check_attributes(data)
 
 class TestEnvi(unittest.TestCase):
 
