@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.qhull import ConvexHull, QhullError
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, convolve
 from sklearn.preprocessing import normalize as sknormalize
 
 from extranormal3 import normal_xas, extra_exafs
@@ -878,3 +878,38 @@ class SpSubtract(Preprocess):
                                     data.domain.metas)
         return data.from_table(domain, data)
 
+
+class MovingAverageFeature(SelectColumn):
+    InheritEq = True
+
+class _MovingAverageCommon(CommonDomain):
+    def __init__(self, kernelsize, domain):
+        super().__init__(domain)
+        self.kernelsize = kernelsize
+
+    def transformed(self, data):
+        def convolveKernel(x):
+            kernel = (1/self.kernelsize) * np.ones(self.kernelsize)
+            return convolve(x, kernel, mode='same', method='auto')
+        return np.apply_along_axis(convolveKernel, 1, data.X)
+
+
+class MovingAverage(Preprocess):
+    """
+    Applies a moving average to the signals using scypy.convolve.
+
+    Parameters
+    ----------
+    kernelsize : Size of the averaging window in the 1d signal
+    """
+
+    def __init__(self, kernelsize=1):
+        self.kernelsize = kernelsize
+
+    def __call__(self, data):
+        common = _MovingAverageCommon(self.kernelsize, data.domain)
+        atts = [a.copy(compute_value=MovingAverageFeature(i, common))
+                for i, a in enumerate(data.domain.attributes)]
+        domain = Orange.data.Domain(atts, data.domain.class_vars,
+                                    data.domain.metas)
+        return data.from_table(domain, data)
