@@ -443,13 +443,13 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
             Orange.data.StringVariable.make("channel"),
         ]
 
-        out_meta = np.hstack((out_meta_ints, out_meta_floats, out_meta_strs))
+        out_meta = np.hstack((out_meta_ints, out_meta_floats, out_meta_strs), dtype="object")
 
         domain = Orange.data.Domain([], None, metas=metas)
         meta_data = Table.from_numpy(
             domain,
             X=np.zeros((len(out_data), 0)),
-            metas=np.asarray(out_meta, dtype=object),
+            metas=out_meta,
         )
 
         # this info is used in the confirmation for complex fft calculation
