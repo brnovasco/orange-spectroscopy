@@ -460,41 +460,12 @@ class OWFFT(OWWidget):
 
             if self.limit_output is True:
                 wavenumbers, spectra = self.limit_range(wavenumbers, spectra)
-            self.spectra_table = build_spec_table(wavenumbers, spectra,
-                                                  additional_table=self.data)
-            self.Outputs.spectra.send(self.spectra_table)
-            return
-        
-        if self.reader == 'NeaReader_rawTXT':
-            self.stored_phase = None
-            fft_single = irfft.ComplexFFT(
-                    dx=self.dx,
-                    apod_func=self.apod_func,
-                    zff=2**self.zff,
-                    phase_res=self.phase_resolution if self.phase_res_limit else None,
-                    phase_corr=self.phase_corr,
-                    peak_search=self.peak_search,
-                    )
-            full_data = self.data.X
-            for row in full_data:
-                spectrum_out, phase_out, wavenumbers = fft_single(
-                    row, zpd=stored_zpd_fwd)
-                spectra.append(spectrum_out)
-                phases.append(phase_out)
-            spectra = np.vstack(spectra)
-            phases = np.vstack(phases)
-
-            if self.limit_output is True:
-                wavenumbers, spectra = self.limit_range(wavenumbers, spectra)
             # scale wavenumbers
             if self.rescale_wavenumber:
                 wavenumbers = wavenumbers * self.wavenumber_scaling_factor
             self.spectra_table = build_spec_table(wavenumbers, spectra,
                                                   additional_table=self.data)
-            self.phases_table = build_spec_table(wavenumbers, phases,
-                                                    additional_table=self.data)
             self.Outputs.spectra.send(self.spectra_table)
-            self.Outputs.phases.send(self.phases_table)
             return
 
             
@@ -639,8 +610,15 @@ class OWFFT(OWWidget):
             self.controls.phase_corr.setDisabled(True)
             self.controls.phase_res_limit.setDisabled(True)
             self.controls.phase_resolution.setDisabled(True)
+            self.controls.wavenumber_scaling_factor.setDisabled(False)
+            self.controls.rescale_wavenumber.setDisabled(False)
 
             info = self.data.attributes
+            try:
+                self.wavenumber_scaling_factor = float(info['Wavenumber Scaling'])
+                self.rescale_wavenumber = True # Enable rescale wavenumber
+            except KeyError:
+                self.wavenumber_scaling_factor = 1.0            
             number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
             scan_size = float(info['Interferometer Center/Distance'][2].replace(',', '')) #Microns
             scan_size = scan_size*1e-4 #Convert to cm
@@ -652,48 +630,6 @@ class OWFFT(OWWidget):
             self.infoc.setText(f"Using an automatic datapoint spacing (Δx).\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
             return
         
-        if self.reader == 'NeaReader_rawTXT': # TODO Avoid the magic word
-            message = "Enabling settings for NeaReader multichannel raw data"
-
-            self.controls.auto_sweeps.setDisabled(True)
-            self.controls.sweeps.setDisabled(True)
-            self.controls.peak_search.setEnabled(True)
-            self.controls.zpd1.setDisabled(True)
-            self.controls.zpd2.setDisabled(True)
-            self.controls.phase_corr.setDisabled(False)
-            self.controls.phase_res_limit.setDisabled(False)
-            self.controls.phase_resolution.setDisabled(False)
-            self.controls.rescale_wavenumber.setDisabled(False)
-            self.controls.wavenumber_scaling_factor.setDisabled(False)
-
-            self.phase_corr = self.phase_opts.index("None (real/imag)")
-            self.dx_HeNe = False
-            self.dx_HeNe_cb.setDisabled(False)
-            self.dx_edit.setDisabled(False)
-            self.rescale_wavenumber = True
-            self.zff = 2
-
-            info = self.data.attributes
-            try:
-                self.wavenumber_scaling_factor = float(info['Wavenumber Scaling'])
-                message+=f"\nWavenumber Scaling factor: {self.wavenumber_scaling_factor:.8f}"
-            except KeyError:
-                message+="\nWavenumber Scaling factor: Not found"
-                self.wavenumber_scaling_factor = 1.0
-            
-            try:
-                number_of_points = int(info['Pixel Area (X, Y, Z)'][3])
-                scan_size = float(info['Interferometer Center/Distance'][2].replace(',', '')) #Microns
-                scan_size = scan_size*1e-4 #Convert to cm
-                step_size = (scan_size * 2) / (number_of_points - 1)
-                self.dx = step_size
-                message+=f"\nUsing calculated datapoint spacing (Δx) from metadata.\nΔx:\t{self.dx:.8} cm"
-            except KeyError:
-                message+="\nDatapoint spacing (Δx) info not found in metadata. Using default value."
-            
-            message+="\nApplying Complex Fourier Transform."
-            self.infoc.setText(message)
-            return
 
         try:
             lwn = self.data.get_column("Effective Laser Wavenumber")
