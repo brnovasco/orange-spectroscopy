@@ -120,7 +120,7 @@ if __name__ == '__main__':
         long_description_content_type='text/markdown',
         author='Canadian Light Source, Biolab UL, Soleil, Elettra',
         author_email='marko.toplak@gmail.com',
-        version="0.6.12",
+        version="0.6.13",
         packages=PACKAGES,
         package_data=PACKAGE_DATA,
         data_files=DATA_FILES,
@@ -142,7 +142,7 @@ if __name__ == '__main__':
             'extranormal3 >=0.0.3',
             'renishawWiRE>=0.1.8',
             'pillow',
-            'lmfit>=1.0.2',
+            'lmfit>=1.3.1',
             'bottleneck',
             'pebble',
             'agilent-format>=0.4.5'
