@@ -317,7 +317,7 @@ class NeaReaderGSF(FileFormat, SpectralFileFormat):
 class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
 
     EXTENSIONS = (".txt",)
-    DESCRIPTION = "NeaSPEC multichannel interferogram"
+    DESCRIPTION = "NeaSPEC multichannel interferograms"
 
     def read_spectra(self):
         path = self.filename
@@ -362,19 +362,14 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
             k, v = lineparser(line)
             info.update({k: v})
 
-        # reshaping the data from the tableData
-
-        # the channel data must be combined from pairs of two channels (OnA and OnP)
-        # into a single channel (On) for each pair
-        combined_channel_data = []
-        combined_channel_data_headers = []
-        for i, header in enumerate(table_data_headers):
-            if re.match(r"O[1-9]", header):
-                if i % 2 == 0:
-                    combined_channel_data_headers.append(header[0:2])
-                    amplitude = table_data_values[:, i]
-                    phase = table_data_values[:, i + 1]
-                    combined_channel_data.append(amplitude * phase)
+        # getting the index of the columns that contain the relevant data
+        # ASSUMPTION: there are multiple channels with names following
+        # the format O[1-9]A and O[1-9]P for the amplitude and phase raw data
+        valid_channel_cols = [
+            i
+            for i, dh in enumerate(table_data_headers)
+            if re.match(r"O[1-9][A,P]", dh)
+        ]
 
         # info related to the data shape and final metadata
         # getting pixel area info from the header
@@ -385,8 +380,7 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         runs = int(info["Averaging"])
 
         # defining the shape of the output data
-        out_rows = len(combined_channel_data_headers) * runs * rows * cols
-        # out_rows = len(valid_channel_cols) * runs * rows * cols
+        out_rows = len(valid_channel_cols) * runs * rows * cols
         out_cols = depth
         out_data_headers = np.arange(0, depth, 1)
         out_data = np.zeros((out_rows, out_cols), dtype="float64")
@@ -407,7 +401,7 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         # reading the data from the tableData rowise trough rows, columns and runs
         # and then columnwise trough the channels and inserting it into
         # the output table as rows using the data depth as the new data columns
-        channels_len = len(combined_channel_data_headers)
+        channels_len = len(valid_channel_cols)
         for row in range(rows):
             for column in range(cols):
                 for run in range(runs):
@@ -423,12 +417,12 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                     delta_x = delta_m * 2 * 1e2 # converting interferometer distance to step size 
                     for channel in range(channels_len):
                         output_table_index = loop_step * channels_len + channel
-                        # get the selected column channel
-                        # from row inputTableIndex to inputTableIndex + depth
-                        out_channel_data = combined_channel_data[channel][input_table_index : input_table_index + depth]
-                        # insert into the outputTableIndex table as a row
-                        out_data[output_table_index, :] = out_channel_data.transpose()
-                        channel_name = combined_channel_data_headers[channel]
+                        channel_data = table_data_values[
+                            input_table_index : input_table_index + depth,
+                            valid_channel_cols[channel],
+                        ]
+                        out_data[output_table_index, :] = channel_data.transpose()
+                        channel_name = table_data_headers[valid_channel_cols[channel]]
                         out_meta_ints[output_table_index, :] = [data_row, data_column, data_run]
                         out_meta_floats[output_table_index, :] = [mean_z, delta_x]
                         out_meta_strs[output_table_index] = channel_name
@@ -453,7 +447,7 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
         )
 
         # this info is used in the confirmation for complex fft calculation
-        info.update({"Reader": "NeaReader_rawTXT"})
+        info.update({"Reader": "NeaReaderGSF"})
         meta_data.attributes = info
 
         return out_data_headers, out_data, meta_data
