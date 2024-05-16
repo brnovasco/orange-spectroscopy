@@ -433,12 +433,12 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
 
         # formatting the metadata as it is expected by Orange
         metas = [
-            Orange.data.ContinuousVariable.make("column"),
-            Orange.data.ContinuousVariable.make("row"),
-            Orange.data.ContinuousVariable.make("run"),
-            Orange.data.ContinuousVariable.make("Z"),
-            Orange.data.ContinuousVariable.make("delta_x"),
-            Orange.data.StringVariable.make("channel"),
+            Orange.data.ContinuousVariable("column"),
+            Orange.data.ContinuousVariable("row"),
+            Orange.data.ContinuousVariable("run"),
+            Orange.data.ContinuousVariable("Z"),
+            Orange.data.ContinuousVariable("delta_x"),
+            Orange.data.StringVariable("channel"),
         ]
 
         out_meta = np.hstack((out_meta_ints, out_meta_floats, out_meta_strs), dtype="object")
