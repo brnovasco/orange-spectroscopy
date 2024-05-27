@@ -396,6 +396,8 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
             for i, dh in enumerate(table_data_headers)
             if re.match(r"O[1-9][A,P]", dh)
         ]
+        data_channel_names = [table_data_headers[i] for i in valid_channel_cols]
+        info.update({"Data Channels": data_channel_names})
 
         # info related to the data shape and final metadata
         # getting pixel area info from the header
@@ -449,18 +451,20 @@ class NeaReaderMultiChannelTXT(FileFormat, SpectralFileFormat):
                         ]
                         out_data[output_table_index, :] = channel_data.transpose()
                         channel_name = table_data_headers[valid_channel_cols[channel]]
+                        # we are intentionally changing metadata here to match the expected output
+                        # by swapping the row and column index in the metadata
                         out_meta_ints[output_table_index, :] = [data_row, data_column, data_run]
                         out_meta_floats[output_table_index, :] = [mean_z, delta_x]
                         out_meta_strs[output_table_index] = channel_name
 
         # formatting the metadata as it is expected by Orange
         metas = [
-            Orange.data.ContinuousVariable.make("column"),
-            Orange.data.ContinuousVariable.make("row"),
-            Orange.data.ContinuousVariable.make("run"),
-            Orange.data.ContinuousVariable.make("Z"),
-            Orange.data.ContinuousVariable.make("delta_x"),
-            Orange.data.StringVariable.make("channel"),
+            Orange.data.ContinuousVariable("column"),
+            Orange.data.ContinuousVariable("row"),
+            Orange.data.ContinuousVariable("run"),
+            Orange.data.ContinuousVariable("Z"),
+            Orange.data.ContinuousVariable("delta_x"),
+            Orange.data.StringVariable("channel"),
         ]
 
         out_meta = np.hstack((out_meta_ints, out_meta_floats, out_meta_strs), dtype="object")

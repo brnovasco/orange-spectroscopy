@@ -601,7 +601,7 @@ class OWFFT(OWWidget):
         if self.reader == 'NeaReaderGSF': # TODO Avoid the magic word
             self.dx_HeNe = False
             self.dx_HeNe_cb.setDisabled(True)
-            self.dx_edit.setDisabled(True)
+            self.dx_edit.setDisabled(False)
             self.controls.auto_sweeps.setDisabled(True)
             self.controls.sweeps.setDisabled(True)
             self.controls.peak_search.setEnabled(True)
@@ -624,10 +624,19 @@ class OWFFT(OWWidget):
             scan_size = scan_size*1e-4 #Convert to cm
             step_size = (scan_size * 2) / (number_of_points - 1)
 
+            step_size_text = "Datapoint spacing (Δx) calculated from data attributes\n" \
+                "on Pixel Area and Interferometer Center/Distance.\n" 
+
+            if 'Wavenumber Scaling' in info:
+                wavenumber_scaling_factor = float(info['Wavenumber Scaling'])
+                # rescaling dx based on the provided frequency space scaling factor
+                step_size = step_size * (1/wavenumber_scaling_factor)
+                step_size_text += f"Wavenumber Scaling Factor:\t{wavenumber_scaling_factor:.8}\n"
+
             self.dx = step_size
             self.zff = 2 #Because is power of 2
 
-            self.infoc.setText(f"Using an automatic datapoint spacing (Δx).\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
+            self.infoc.setText(step_size_text+f"Calculated datapoint spacing (Δx).\nΔx:\t{self.dx:.8} cm\nApplying Complex Fourier Transform.")
             return
         
 
