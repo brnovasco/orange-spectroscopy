@@ -13,7 +13,7 @@ from orangecontrib.spectroscopy.preprocess import Absorbance, Transmittance, \
     GaussianSmoothing, PCADenoising, RubberbandBaseline, \
     Normalize, LinearBaseline, CurveShift, EMSC, MissingReferenceException, \
     WrongReferenceException, NormalizeReference, XASnormalization, ExtractEXAFS, \
-    PreprocessException, NormalizePhaseReference, Despike, SpSubtract
+    PreprocessException, NormalizePhaseReference, Despike, SpSubtract, PhaseUnwrap
 from orangecontrib.spectroscopy.preprocess.als import ALSP, ARPLS, AIRPLS
 from orangecontrib.spectroscopy.preprocess.me_emsc import ME_EMSC
 from orangecontrib.spectroscopy.preprocess.atm_corr import AtmCorr
@@ -59,6 +59,7 @@ PREPROCESSORS_INDEPENDENT_SAMPLES = [
     Normalize(method=Normalize.Area, int_method=Integrate.PeakMax, lower=0, upper=10000),
     Normalize(method=Normalize.MinMax),
     CurveShift(1),
+    PhaseUnwrap(),
     Despike(threshold=5, cutoff=60, dis=5),
     ALSP(lam=100E+6, itermax=5, p=0.5),
     ARPLS(lam=100E+5, itermax=5, ratio=0.5),
@@ -596,6 +597,16 @@ class TestCurveShift(unittest.TestCase):
         fdata = f(data)
         np.testing.assert_almost_equal(fdata.X,
                                        [[2.1, 3.1, 4.1, 5.1]])
+
+
+class TestPhaseUnwrap(unittest.TestCase):
+
+    def test_simple(self):
+        data = Table.from_numpy(None, [[1, 1 + 2 * np.pi]] )
+        f = PhaseUnwrap()
+        fdata = f(data)
+        # check that unwrap removes jumps greater that 2*pi
+        np.testing.assert_array_equal(fdata, [[1, 1]])
 
 
 class TestUtils(unittest.TestCase):
